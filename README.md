@@ -1,6 +1,17 @@
 # CPU Tuner 🔧
 
+[![CI](https://github.com/clsoho/cpu-tuner/actions/workflows/ci.yml/badge.svg)](https://github.com/clsoho/cpu-tuner/actions/workflows/ci.yml)
+[![Release](https://github.com/clsoho/cpu-tuner/actions/workflows/release.yml/badge.svg)](https://github.com/clsoho/cpu-tuner/actions/workflows/release.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 一个 Windows 桌面 CPU 性能调优工具，基于 Tauri v2 + React + TypeScript 构建。
+
+## 📥 下载
+
+前往 [Releases](https://github.com/clsoho/cpu-tuner/releases) 下载最新版本：
+
+- **`.msi`** — 标准安装包，推荐使用
+- **`.exe`** — 绿色免安装版，下载即用
 
 ## 功能
 
@@ -11,10 +22,10 @@
 - 删除不需要的电源计划
 
 ### 2. CPU 参数调整
-- **最小处理器状态** - 控制 CPU 最低频率百分比
-- **最大处理器状态** - 限制 CPU 最高频率（≤99% 可禁用 Turbo Boost）
-- **系统散热策略** - 被动/主动散热模式选择
-- **处理器性能提升模式** - 控制 Turbo Boost 行为（禁用/启用/主动/高效）
+- **最小处理器状态** — 控制 CPU 最低频率百分比
+- **最大处理器状态** — 限制 CPU 最高频率（≤99% 可禁用 Turbo Boost）
+- **系统散热策略** — 被动/主动散热模式选择
+- **处理器性能提升模式** — 控制 Turbo Boost 行为（禁用/启用/主动/高效）
 - 快捷预设：节能模式、平衡模式、极致性能
 
 ### 3. 性能监控
@@ -38,35 +49,6 @@
 | 系统信息 | sysinfo crate |
 | 电源管理 | Windows powercfg |
 
-## 项目结构
-
-```
-cpu-tuner/
-├── src/                          # React 前端
-│   ├── App.tsx                   # 主应用组件
-│   ├── main.tsx                  # 入口
-│   ├── components/
-│   │   ├── Layout/
-│   │   │   ├── Sidebar.tsx       # 侧边栏导航
-│   │   │   └── Header.tsx        # 顶栏
-│   │   ├── Dashboard/index.tsx   # 仪表盘（概览）
-│   │   ├── PowerPlans/index.tsx  # 电源计划管理
-│   │   ├── Monitor/index.tsx     # 性能监控图表
-│   │   └── CpuSettings/index.tsx # CPU 参数设置
-│   ├── stores/appStore.ts        # Zustand 状态
-│   ├── lib/tauri.ts              # Tauri API 封装
-│   └── styles/globals.css        # 全局样式
-├── src-tauri/                    # Rust 后端
-│   ├── src/main.rs               # Tauri 入口
-│   ├── src/commands/
-│   │   ├── power_plan.rs         # 电源计划 CRUD + 参数设置
-│   │   └── monitor.rs            # 系统监控（CPU/内存/温度）
-│   ├── Cargo.toml
-│   └── tauri.conf.json
-├── package.json
-└── vite.config.ts
-```
-
 ## 开发
 
 ```bash
@@ -80,12 +62,37 @@ npm run tauri:dev
 npm run tauri:build
 ```
 
+## 自动发布
+
+项目配置了 GitHub Actions CI/CD：
+
+| Workflow | 触发条件 | 作用 |
+|----------|---------|------|
+| `ci.yml` | Push to main / PR | TypeScript 检查 + 构建验证 |
+| `release.yml` | Push `v*` tag | 完整打包 + 发布 GitHub Release |
+
+### 发布新版本
+
+```bash
+# 1. 修改 src-tauri/tauri.conf.json 中的 version
+# 2. 提交并打 tag
+git add -A
+git commit -m "release: v0.2.0"
+git tag v0.2.0
+git push origin main --tags
+```
+
+推送 tag 后 GitHub Actions 会自动：
+1. 安装 Node.js + Rust 环境
+2. 构建前端 + Tauri 桌面应用
+3. 生成 `.msi` 安装包和 `.exe` 绿色版
+4. 创建 GitHub Release 并上传产物
+
 ## 前提条件
 
 - Windows 10/11
 - Node.js >= 18
 - Rust (rustup)
-- Tauri CLI: `cargo install tauri-cli`
 
 ## 许可
 

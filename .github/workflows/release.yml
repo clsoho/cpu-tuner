@@ -1,0 +1,72 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build & Release
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Extract version from tag
+        id: version
+        shell: bash
+        run: echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: v__VERSION__
+          releaseName: "CPU Tuner v__VERSION__"
+          releaseBody: |
+            ## CPU Tuner v__VERSION__
+
+            ### 🔧 新功能
+            - 电源计划管理（创建、切换、删除）
+            - CPU 参数调整（最小/最大状态、散热策略、Boost 模式）
+            - 实时性能监控（CPU 使用率、频率、温度、内存）
+            - 快捷预设：节能 / 平衡 / 极致性能
+
+            ### 📦 安装方式
+            - **推荐：** 下载 `.msi` 安装包，双击安装
+            - **绿色版：** 下载 `.exe` 即可直接运行
+
+            ### ⚠️ 注意
+            - 仅支持 **Windows 10/11**
+            - 部分功能需要 **管理员权限**
+
+            ---
+            *构建时间：${{ github.event.head_commit.timestamp }}*
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: false

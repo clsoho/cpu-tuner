@@ -16,4 +16,4 @@ src-tauri/target/
 Thumbs.db
 
 # Tauri
-src-tauri/Cargo.lock
+# src-tauri/Cargo.lock  # Track lockfile for reproducible builds
