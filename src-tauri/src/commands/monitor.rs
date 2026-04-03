@@ -67,12 +67,14 @@ fn get_cpu_info_from_wmic() -> Result<CpuInfo, String> {
         }
     }
 
+    let vendor = detect_vendor(&name);
+
     Ok(CpuInfo {
         name,
         cores_physical: cores,
         cores_logical: logical,
         base_freq_mhz: if max_freq > 0 { Some(max_freq as f64) } else { None },
-        vendor: detect_vendor(&name),
+        vendor,
     })
 }
 
