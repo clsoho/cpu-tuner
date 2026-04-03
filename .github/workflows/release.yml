@@ -11,21 +11,10 @@ env:
 
 jobs:
   build:
-    name: Build (${{ matrix.platform }})
-    runs-on: ${{ matrix.os }}
+    name: Build & Release
+    runs-on: windows-latest
     permissions:
       contents: write
-
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: windows-x64
-            os: windows-latest
-          - platform: macos-latest
-            os: macos-latest
-          - platform: linux-x64
-            os: ubuntu-latest
 
     steps:
       - name: Checkout
@@ -48,15 +37,10 @@ jobs:
         with:
           workspaces: src-tauri
 
-      - name: Install Linux dependencies
-        if: matrix.platform == 'linux-x64'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libappindicator3-dev \
-            librsvg2-dev \
-            patchelf
+      - name: Extract version from tag
+        id: version
+        shell: bash
+        run: echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
@@ -75,13 +59,11 @@ jobs:
             - 快捷预设：节能 / 平衡 / 极致性能
 
             ### 📦 安装方式
-            - **Windows 推荐：** 下载 `.msi` 安装包，双击安装
-            - **Windows 绿色版：** 下载 `.exe` 即可直接运行
-            - **macOS：** 下载 `.dmg` 安装
-            - **Linux：** 下载 `.AppImage` 或 `.deb` 包
+            - **推荐：** 下载 `.msi` 安装包，双击安装
+            - **绿色版：** 下载 `.exe` 即可直接运行
 
             ### ⚠️ 注意
-            - 核心功能仅支持 **Windows 10/11**
+            - 仅支持 **Windows 10/11**
             - 部分功能需要 **管理员权限**
 
             ---
