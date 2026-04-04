@@ -37,11 +37,13 @@ pub struct PowerSchemeDetails {
 /// 执行 powercfg 命令并返回输出
 pub fn run_powercfg(args: &[&str]) -> Result<String, String> {
     let mut cmd = Command::new("powercfg");
-    cmd.args(args);
     #[cfg(windows)]
     cmd.creation_flags(CREATE_NO_WINDOW);
+    cmd.args(args);
 
-    let output = cmd.output().map_err(|e| format!("执行 powercfg 失败: {}", e))?;
+    let output = cmd
+        .output()
+        .map_err(|e| format!("执行 powercfg 失败: {}", e))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -62,28 +64,89 @@ fn parse_power_plans(output: &str) -> Vec<PowerPlan> {
             continue;
         }
 
-        // 检查是否包含 * (活动计划标记)
         let is_active = line.contains('*');
-        let clean_line = line.replace('*', "").trim().to_string();
 
-        // GUID 格式: XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX
-        if let Some(guid_start) = clean_line.find('{') {
-            if let Some(guid_end) = clean_line.find('}') {
-                let guid = clean_line[guid_start + 1..guid_end].to_string();
-                let name = clean_line[guid_end + 1..].trim().trim_start_matches('(').trim_end_matches(')').trim().to_string();
-
+        // Try {GUID} format first
+        if let Some(start) = line.find('{') {
+            if let Some(end) = line.find('}') {
+                let guid = line[start + 1..end].to_string();
+                let name = line[end + 1..].trim()
+                    .trim_start_matches('(')
+                    .trim_end_matches(')')
+                    .trim()
+                    .to_string();
                 if !guid.is_empty() && !name.is_empty() {
-                    plans.push(PowerPlan {
-                        guid,
-                        name,
-                        is_active,
-                    });
+                    plans.push(PowerPlan { guid, name, is_active });
+                }
+                continue;
+            }
+        }
+
+        // Try hex GUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+        if let Some(guid_end) = line.find(|c: char| c.is_ascii_whitespace() || c == '(') {
+            let potential_guid = &line[..guid_end];
+            if is_valid_guid(potential_guid) {
+                let guid = potential_guid.to_string();
+                let name = line[guid_end..].trim()
+                    .trim_start_matches('(')
+                    .trim_end_matches(')')
+                    .trim()
+                    .to_string();
+                if !name.is_empty() {
+                    plans.push(PowerPlan { guid, name, is_active });
                 }
             }
         }
     }
 
     plans
+}
+
+fn is_valid_guid(s: &str) -> bool {
+    if s.len() != 36 {
+        return false;
+    }
+    let parts: Vec<&str> = s.split('-').collect();
+    if parts.len() != 5 {
+        return false;
+    }
+    let lengths = [8, 4, 4, 4, 12];
+    for (i, &len) in lengths.iter().enumerate() {
+        if parts[i].len() != len {
+            return false;
+        }
+        if !parts[i].chars().all(|c| c.is_ascii_hexdigit()) {
+            return false;
+        }
+    }
+    true
+}
+
+/// Get active power scheme GUID (fixed to handle both formats)
+pub fn get_active_scheme_guid() -> Result<String, String> {
+    let output = run_powercfg(&["/getactivescheme"])?;
+    for line in output.lines() {
+        let line = line.trim();
+
+        // Try {GUID} format first
+        if let Some(start) = line.find('{') {
+            if let Some(end) = line.find('}') {
+                return Ok(line[start + 1..end].to_string());
+            }
+        }
+
+        // Fallback: hex GUID format "Power Scheme GUID: xxxxxxxx-xxxx-..."
+        if let Some(pos) = line.find("GUID:") {
+            let rest = line[pos + 5..].trim();
+            if let Some(space_pos) = rest.find(' ') {
+                let hex_guid = rest[..space_pos].trim();
+                if is_valid_guid(hex_guid) {
+                    return Ok(hex_guid.to_string());
+                }
+            }
+        }
+    }
+    Err("无法获取活动电源方案 GUID".to_string())
 }
 
 /// 获取所有电源计划
@@ -104,11 +167,35 @@ pub async fn get_active_power_plan() -> Result<PowerPlan, String> {
 
     for line in output.lines() {
         let line = line.trim();
-        if let Some(guid_start) = line.find('{') {
-            if let Some(guid_end) = line.find('}') {
-                let guid = line[guid_start + 1..guid_end].to_string();
-                let name = line[guid_end + 1..].trim().trim_start_matches('(').trim_end_matches(')').trim().to_string();
+        if let Some(start) = line.find('{') {
+            if let Some(end) = line.find('}') {
+                let guid = line[start + 1..end].to_string();
+                let name = line[end + 1..].trim()
+                    .trim_start_matches('(')
+                    .trim_end_matches(')')
+                    .trim()
+                    .to_string();
                 return Ok(PowerPlan { guid, name, is_active: true });
+            }
+        }
+
+        // Try hex GUID format
+        if let Some(pos) = line.find("GUID:") {
+            let rest = line[pos + 5..].trim();
+            if let Some(space_pos) = rest.find(' ') {
+                let hex_guid = rest[..space_pos].trim();
+                if is_valid_guid(hex_guid) {
+                    let name = rest[space_pos..].trim()
+                        .trim_start_matches('(')
+                        .trim_end_matches(')')
+                        .trim()
+                        .to_string();
+                    return Ok(PowerPlan {
+                        guid: hex_guid.to_string(),
+                        name,
+                        is_active: true,
+                    });
+                }
             }
         }
     }
@@ -119,7 +206,7 @@ pub async fn get_active_power_plan() -> Result<PowerPlan, String> {
 #[command]
 pub async fn set_active_power_plan(guid: String) -> Result<String, String> {
     info!("[电源] 切换电源计划到: {}", guid);
-    let _ = run_powercfg(&["/setactive", &guid])?;
+    run_powercfg(&["/setactive", &guid])?;
     Ok(format!("已切换到电源计划: {}", guid))
 }
 
@@ -129,7 +216,6 @@ pub async fn create_power_plan(name: String, base_scheme_guid: String) -> Result
     info!("[电源] 创建新电源计划: {} (基于 {})", name, base_scheme_guid);
     let output = run_powercfg(&["/duplicatescheme", &base_scheme_guid])?;
 
-    // 输出格式: 电源方案 GUID: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx  (名称)
     for line in output.lines() {
         let line = line.trim();
         if let Some(guid_start) = line.find(|c: char| c == '{' || c.is_ascii_hexdigit()) {
@@ -140,7 +226,6 @@ pub async fn create_power_plan(name: String, base_scheme_guid: String) -> Result
 
             if clean.len() == 36 && clean.chars().filter(|&c| c == '-').count() == 4 {
                 let guid = clean.to_string();
-                // 设置名称
                 let _ = run_powercfg(&["/changename", &guid, &name]);
                 return Ok(PowerPlan {
                     guid,
@@ -167,14 +252,7 @@ pub async fn delete_power_plan(guid: String) -> Result<String, String> {
 pub async fn get_processor_power_settings(scheme_guid: String) -> Result<ProcessorPowerSettings, String> {
     info!("[电源] 获取处理器电源设置: {}", scheme_guid);
 
-    // 电源子组 GUID
-    // 54533251-82be-4824-96c1-47b60b740d00 = 处理器电源管理
     let subgroup = "54533251-82be-4824-96c1-47b60b740d00";
-    // 设置 GUID:
-    // 893dee8e-2bef-41e0-89c6-b55d0929964c = 最小处理器状态
-    // bc5038f7-23e0-4960-96da-33abaf5935ec = 最大处理器状态
-    // 94d3a615-a899-4ac5-ae2b-e4d8f634367f = 系统散热策略
-    // be337238-0d82-4146-a960-4f3749d470c7 = 处理器性能提升模式
 
     let mut settings = ProcessorPowerSettings {
         min_processor_state: None,
@@ -194,11 +272,10 @@ pub async fn get_processor_power_settings(scheme_guid: String) -> Result<Process
         if let Ok(output) = run_powercfg(&[
             "/query", &scheme_guid, subgroup, guid
         ]) {
-            // 解析 "当前交流电源设置索引: 0x00000064 (100)"
             for line in output.lines() {
                 let line = line.trim();
-                if line.contains("当前交流电源设置索引") || line.contains("Current AC Power Setting Index") {
-                    if let Some(hex_start) = line.find("0x") {
+                if line.contains("当前交流电源设置索引") || line.contains("Active AC Power Setting Index") {
+                    if let Some(hex_start) = line.find("0x").or_else(|| line.find("0X")) {
                         let hex_str = &line[hex_start + 2..];
                         let hex_str = hex_str.split_whitespace().next().unwrap_or(hex_str);
                         if let Ok(val) = u32::from_str_radix(hex_str.trim_end_matches(')'), 16) {
@@ -257,7 +334,7 @@ pub async fn set_processor_power_settings(
         run_powercfg(&["/setdcvalueindex", &scheme_guid, subgroup, guid, &val_str])?;
     }
 
-    // 切换到当前方案使其生效
+    // 切换当前方案使配置生效
     let _ = run_powercfg(&["/setactive", &scheme_guid]);
 
     Ok("处理器电源设置已更新".to_string())
@@ -271,18 +348,4 @@ pub async fn get_power_scheme_details(scheme_guid: String) -> Result<PowerScheme
         scheme_guid,
         processor,
     })
-}
-
-/// Get active power scheme GUID (used by profiles module)
-pub fn get_active_scheme_guid() -> Result<String, String> {
-    let output = run_powercfg(&["/getactivescheme"])?;
-    for line in output.lines() {
-        let line = line.trim();
-        if let Some(start) = line.find('{') {
-            if let Some(end) = line.find('}') {
-                return Ok(line[start + 1..end].to_string());
-            }
-        }
-    }
-    Err("无法获取活动电源方案 GUID".to_string())
 }
