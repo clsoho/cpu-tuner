@@ -69,7 +69,7 @@ impl MonitorState {
         let freq_current = get_current_freq().unwrap_or(
             sys.cpus().first().map(|c| c.frequency() as f64).unwrap_or(0.0),
         );
-        let _freq_max = get_max_freq().unwrap_or(
+        let freq_max = get_max_freq().unwrap_or(
             sys.cpus()
                 .first()
                 .map(|c| c.frequency() as f64)

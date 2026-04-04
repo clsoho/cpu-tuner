@@ -1,158 +1,238 @@
-import { useAppStore } from '../../stores/appStore';
-import { Activity } from 'lucide-react';
+import { useEffect, useState } from 'react'
+import { useAppStore } from '../../stores/appStore'
+import * as api from '../../types'
 
-function MiniChart({ data, color, max }: { data: number[]; color: string; max?: number }) {
-  if (data.length < 2) return null;
-  const h = 60;
-  const w = 240;
-  const yMax = max ?? Math.max(...data, 1);
+const HISTORY_LENGTH = 120
 
-  const points = data.map((v, i) => {
-    const x = (i / (data.length - 1)) * w;
-    const y = h - (v / yMax) * h;
-    return `${x},${y}`;
-  }).join(' ');
+export default function MonitorPage() {
+  const { cpuInfo, metrics, metricsHistory, startMonitoring, stopMonitoring } = useAppStore()
+  const [running, setRunning] = useState(false)
 
-  return (
-    <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-16">
-      {/* Grid lines */}
-      <line x1="0" y1={h / 2} x2={w} y2={h / 2} stroke="var(--border-primary)" strokeWidth="0.5" strokeDasharray="4" />
-      <polyline fill="none" stroke={color} strokeWidth="1.5" points={points} strokeLinecap="round" strokeLinejoin="round" />
-      {/* Gradient area */}
-      <polygon
-        fill={`${color}15`}
-        points={`0,${h} ${points} ${w},${h}`}
-      />
-    </svg>
-  );
-}
+  useEffect(() => {
+    startMonitoring()
+    setRunning(true)
+    return () => stopMonitoring()
+  }, [])
 
-export function Monitor() {
-  const { metrics, metricsHistory } = useAppStore();
-
-  if (!metrics) {
-    return (
-      <div className="h-full flex items-center justify-center">
-        <div className="text-center">
-          <Activity size={32} className="text-tuner-400 animate-pulse mx-auto mb-3" />
-          <p className="text-sm text-content-tertiary">正在加载监控数据...</p>
-        </div>
-      </div>
-    );
+  const toggleRun = () => {
+    if (running) {
+      stopMonitoring()
+      setRunning(false)
+    } else {
+      startMonitoring()
+      setRunning(true)
+    }
   }
 
-  const cpuHistory = metricsHistory.map(m => m.cpu_usage_total);
-  const freqHistory = metricsHistory.map(m => m.cpu_freq_current_mhz);
-  const tempHistory = metricsHistory.map(m => m.cpu_temperature_c ?? 0);
-  const memHistory = metricsHistory.map(m => m.memory_usage_percent);
-
   return (
-    <div className="h-full overflow-y-auto scroll-container pr-2 space-y-6">
+    <div className="monitor-page">
+      <div className="monitor-header">
+        <h2>实时监控</h2>
+        <div className="monitor-controls">
+          <div className={`status-indicator ${running ? 'active' : ''}`}>
+            <span className="status-dot" />
+            <span>{running ? '监控中' : '已暂停'}</span>
+          </div>
+          <button className={`btn-run ${running ? 'btn-stop' : 'btn-start'}`} onClick={toggleRun}>
+            {running ? '⏸ 暂停' : '▶ 开始'}
+          </button>
+        </div>
+      </div>
+
+      {/* Summary Cards */}
+      {metrics && (
+        <div className="monitor-summary">
+          <SummaryCard
+            label="CPU 总使用率"
+            value={`${metrics.cpu_usage_total.toFixed(1)}%`}
+            color={metrics.cpu_usage_total > 80 ? '#ef4444' : '#3b82f6'}
+          />
+          {metrics.cpu_temp_c != null && (
+            <SummaryCard
+              label="温度"
+              value={`${metrics.cpu_temp_c.toFixed(1)}°C`}
+              color={metrics.cpu_temp_c > 85 ? '#ef4444' : '#f59e0b'}
+            />
+          )}
+          <SummaryCard
+            label="当前频率"
+            value={`${metrics.cpu_freq_current_mhz.toFixed(0)} MHz`}
+            color="#22c55e"
+          />
+          <SummaryCard
+            label="线程数"
+            value={`${metrics.cpu_threads}`}
+            color="#8b5cf6"
+          />
+        </div>
+      )}
+
       {/* CPU Usage Chart */}
-      <div className="bg-surface-card rounded-2xl border border-edge p-5">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="text-sm font-semibold text-content-primary">CPU 使用率</h3>
-            <p className="text-xs text-content-tertiary mt-0.5">{metrics.cpu_usage_total.toFixed(1)}% 当前</p>
-          </div>
-          <span className="text-2xl font-bold text-tuner-400">{metrics.cpu_usage_total.toFixed(0)}%</span>
-        </div>
-        <MiniChart data={cpuHistory} color="#3b82f6" max={100} />
-      </div>
-
-      {/* CPU Frequency Chart */}
-      <div className="bg-surface-card rounded-2xl border border-edge p-5">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="text-sm font-semibold text-content-primary">CPU 频率</h3>
-            <p className="text-xs text-content-tertiary mt-0.5">
-              {metrics.cpu_freq_current_mhz.toFixed(0)} MHz
-              {metrics.cpu_freq_max_mhz > 0 && ` / ${metrics.cpu_freq_max_mhz.toFixed(0)} MHz 最大`}
-            </p>
-          </div>
-          <span className="text-2xl font-bold text-green-400">{(metrics.cpu_freq_current_mhz / 1000).toFixed(2)} GHz</span>
-        </div>
-        <MiniChart data={freqHistory} color="#4ade80" max={metrics.cpu_freq_max_mhz || undefined} />
-      </div>
-
-      {/* Temperature Chart */}
-      {metrics.cpu_temperature_c !== null && (
-        <div className="bg-surface-card rounded-2xl border border-edge p-5">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="text-sm font-semibold text-content-primary">CPU 温度</h3>
-              <p className="text-xs text-content-tertiary mt-0.5">
-                {metrics.cpu_temperature_c > 80 ? '⚠️ 温度较高' : metrics.cpu_temperature_c > 60 ? '正常负载' : '温度良好'}
-              </p>
-            </div>
-            <span className={`text-2xl font-bold ${metrics.cpu_temperature_c > 80 ? 'text-red-400' : 'text-amber-400'}`}>
-              {metrics.cpu_temperature_c}°C
-            </span>
-          </div>
-          <MiniChart data={tempHistory} color={metrics.cpu_temperature_c > 80 ? '#f87171' : '#fbbf24'} max={100} />
+      {metrics && metrics.cores.length > 0 && (
+        <div className="chart-section">
+          <h3>线程使用率</h3>
+          <CpuUsageChart history={metricsHistory} threadCount={metrics.cores.length} />
         </div>
       )}
 
-      {/* Memory Chart */}
-      <div className="bg-surface-card rounded-2xl border border-edge p-5">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="text-sm font-semibold text-content-primary">内存使用</h3>
-            <p className="text-xs text-content-tertiary mt-0.5">
-              {metrics.memory_used_mb} MB / {metrics.memory_total_mb} MB
-            </p>
-          </div>
-          <span className="text-2xl font-bold text-purple-400">{metrics.memory_usage_percent.toFixed(1)}%</span>
-        </div>
-        <MiniChart data={memHistory} color="#a78bfa" max={100} />
-      </div>
-
-      {/* Per-Core Detail Table */}
-      {metrics.cpu_cores.length > 0 && (
-        <div className="bg-surface-card rounded-2xl border border-edge p-5">
-          <h3 className="text-sm font-semibold text-content-primary mb-4">核心详情</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="text-content-tertiary border-b border-edge">
-                  <th className="text-left py-2 px-3">核心</th>
-                  <th className="text-right py-2 px-3">频率</th>
-                  <th className="text-right py-2 px-3">使用率</th>
-                  <th className="text-right py-2 px-3 w-32">负载</th>
+      {/* Per-Thread Table */}
+      {metrics && metrics.cores.length > 0 && (
+        <div className="threads-table-container">
+          <h3>线程详情</h3>
+          <table className="threads-table">
+            <thead>
+              <tr>
+                <th>线程</th>
+                <th>使用率</th>
+                <th>频率</th>
+                {metrics.cores.some(c => c.temperature_c != null) && <th>温度</th>}
+                <th>可视化</th>
+              </tr>
+            </thead>
+            <tbody>
+              {metrics.cores.map(core => (
+                <tr key={core.thread_id}>
+                  <td><span className="thread-id">T{core.thread_id}</span></td>
+                  <td>{core.usage_percent.toFixed(1)}%</td>
+                  <td>{core.frequency_mhz > 0 ? `${core.frequency_mhz.toFixed(0)} MHz` : '—'}</td>
+                  {core.temperature_c != null && <td>{core.temperature_c.toFixed(1)}°C</td>}
+                  <td>
+                    <div className="mini-bar">
+                      <div
+                        className="mini-bar-fill"
+                        style={{
+                          width: `${Math.min(core.usage_percent, 100)}%`,
+                          backgroundColor: core.usage_percent > 80 ? '#ef4444' : core.usage_percent > 50 ? '#f59e0b' : '#3b82f6',
+                        }}
+                      />
+                    </div>
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {metrics.cpu_cores.map((core) => (
-                  <tr key={core.core_id} className="border-b border-edge/50 hover:bg-surface-card-hover">
-                    <td className="py-2 px-3 text-content-primary font-mono">Core {core.core_id}</td>
-                    <td className="py-2 px-3 text-right text-content-secondary font-mono">
-                      {core.frequency_mhz.toFixed(0)} MHz
-                    </td>
-                    <td className="py-2 px-3 text-right font-mono text-content-primary">
-                      {core.usage_percent.toFixed(1)}%
-                    </td>
-                    <td className="py-2 px-3">
-                      <div className="h-1.5 rounded-full bg-surface-elevated overflow-hidden">
-                        <div
-                          className={`h-full rounded-full transition-all duration-500 ${
-                            core.usage_percent > 80 ? 'bg-red-500' : core.usage_percent > 50 ? 'bg-amber-500' : 'bg-tuner-500'
-                          }`}
-                          style={{ width: `${Math.min(core.usage_percent, 100)}%` }}
-                        />
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
-
-      {/* Data Points Counter */}
-      <p className="text-[10px] text-content-tertiary text-center">
-        已采集 {metricsHistory.length} 个数据点 · 每 2 秒刷新
-      </p>
     </div>
-  );
+  )
+}
+
+function SummaryCard({ label, value, color }: { label: string; value: string; color: string }) {
+  return (
+    <div className="summary-card" style={{ borderColor: color }}>
+      <div className="summary-label">{label}</div>
+      <div className="summary-value" style={{ color }}>{value}</div>
+    </div>
+  )
+}
+
+function CpuUsageChart({ history, threadCount }: { history: api.CoreMetric[][]; threadCount: number }) {
+  const width = 900
+  const height = 300
+  const padding = { top: 20, right: 10, bottom: 30, left: 40 }
+  const chartW = width - padding.left - padding.right
+  const chartH = height - padding.top - padding.bottom
+
+  const maxThreads = Math.max(threadCount, 1)
+  const rows = 3 // Show first 8 threads in 3 rows
+  const threadCount2 = threadCount
+  const rowsNeeded = Math.min(threadCount2, 16)
+  
+  const colors = [
+    '#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6',
+    '#ec4899', '#06b6d4', '#f97316', '#14b8a6', '#6366f1',
+    '#84cc16', '#f43f5e', '#0ea5e9', '#d946ef', '#eab308',
+    '#a855f7', '#10b981', '#f97316', '#6366f1', '#ec4899',
+    '#06b6d4', '#22c55e', '#f59e0b', '#ef4444',
+  ]
+
+  if (rowsNeeded === 0) return <p className="no-data">没有数据</p>
+  
+  const rowsPerDisplay = Math.min(Math.ceil(threadCount / 16), 1)
+  
+  return (
+    <div className="chart-container">
+      <svg
+        width="100%"
+        viewBox={`0 0 ${width} ${chartH * rowsNeeded + padding.top * 2 + 40 * (rowsNeeded - 1)}`}
+        className="svg-chart"
+      >
+        {/* Grid */}
+        {Array.from({ length: rowsNeeded }).map((_, r) => {
+          const startY = padding.top + r * (chartH + 40)
+          return (
+            <g key={r}>
+              {[0, 25, 50, 75, 100].map(v => (
+                <line
+                  key={v}
+                  x1={padding.left}
+                  y1={startY + chartH - (v / 100) * chartH}
+                  x2={padding.left + chartW}
+                  y2={startY + chartH - (v / 100) * chartH}
+                  stroke="var(--border-primary)"
+                  strokeWidth="0.5"
+                />
+              ))}
+              {[0, 25, 50, 75, 100].map(v => (
+                <text
+                  key={v}
+                  x={padding.left - 5}
+                  y={startY + chartH - (v / 100) * chartH + 4}
+                  fontSize="10"
+                  fill="var(--text-tertiary)"
+                  textAnchor="end"
+                >
+                  {v}
+                </text>
+              ))}
+            </g>
+          )
+        })}
+
+        {/* Lines per thread */}
+        {Array.from({ length: threadCount }).map((_, threadIdx) => {
+          const threadIdx2 = threadIdx
+          const row = Math.floor(threadIdx2 / 16)
+          if (row >= rowsNeeded) return null
+          const col = threadIdx2 % 16
+          const startY = padding.top + row * (chartH + 40)
+          
+          const points: [number, number][] = []
+          for (let i = 0; i < HISTORY_LENGTH; i++) {
+            const sample = history[i]
+            const metric = sample?.[threadIdx2]
+            if (metric != null && metric.usage_percent != null) {
+              const x = padding.left + (i / (HISTORY_LENGTH - 1)) * chartW
+              const y = startY + chartH - (Math.min(metric.usage_percent, 100) / 100) * chartH
+              points.push([x, y])
+            }
+          }
+
+          if (points.length < 2) return null
+          const d = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(' ')
+
+          return (
+            <g key={threadIdx2}>
+              <path
+                d={d}
+                fill="none"
+                stroke={colors[threadIdx2 % colors.length]}
+                strokeWidth="1"
+                opacity="0.8"
+              />
+              {/* Thread label */}
+              <text
+                x={padding.left}
+                y={startY - 5}
+                fontSize="10"
+                fill={colors[threadIdx2 % colors.length]}
+              >
+                T{threadIdx2}
+              </text>
+            </g>
+          )
+        })}
+      </svg>
+    </div>
+  )
 }

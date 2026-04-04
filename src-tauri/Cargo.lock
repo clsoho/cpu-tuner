@@ -591,6 +591,7 @@ dependencies = [
 name = "cpu-tuner"
 version = "0.1.0"
 dependencies = [
+ "dirs",
  "env_logger",
  "log",
  "serde",
@@ -601,6 +602,7 @@ dependencies = [
  "tauri-plugin-notification",
  "tauri-plugin-shell",
  "tokio",
+ "winreg",
 ]
 
 [[package]]

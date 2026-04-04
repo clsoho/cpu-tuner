@@ -35,7 +35,7 @@ pub struct PowerSchemeDetails {
 }
 
 /// 执行 powercfg 命令并返回输出
-fn run_powercfg(args: &[&str]) -> Result<String, String> {
+pub fn run_powercfg(args: &[&str]) -> Result<String, String> {
     let mut cmd = Command::new("powercfg");
     cmd.args(args);
     #[cfg(windows)]
@@ -55,7 +55,6 @@ fn run_powercfg(args: &[&str]) -> Result<String, String> {
 /// 解析 powercfg /list 输出
 fn parse_power_plans(output: &str) -> Vec<PowerPlan> {
     let mut plans = Vec::new();
-    let mut is_star_section = false;
 
     for line in output.lines() {
         let line = line.trim();
@@ -120,7 +119,7 @@ pub async fn get_active_power_plan() -> Result<PowerPlan, String> {
 #[command]
 pub async fn set_active_power_plan(guid: String) -> Result<String, String> {
     info!("[电源] 切换电源计划到: {}", guid);
-    let output = run_powercfg(&["/setactive", &guid])?;
+    let _ = run_powercfg(&["/setactive", &guid])?;
     Ok(format!("已切换到电源计划: {}", guid))
 }
 
@@ -272,4 +271,18 @@ pub async fn get_power_scheme_details(scheme_guid: String) -> Result<PowerScheme
         scheme_guid,
         processor,
     })
+}
+
+/// Get active power scheme GUID (used by profiles module)
+pub fn get_active_scheme_guid() -> Result<String, String> {
+    let output = run_powercfg(&["/getactivescheme"])?;
+    for line in output.lines() {
+        let line = line.trim();
+        if let Some(start) = line.find('{') {
+            if let Some(end) = line.find('}') {
+                return Ok(line[start + 1..end].to_string());
+            }
+        }
+    }
+    Err("无法获取活动电源方案 GUID".to_string())
 }

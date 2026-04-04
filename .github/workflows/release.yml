@@ -42,6 +42,13 @@ jobs:
         shell: bash
         run: echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
 
+      - name: Sync version to tauri.conf.json
+        shell: bash
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
+          echo "Updated tauri.conf.json version to $VERSION"
+
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
@@ -57,6 +64,8 @@ jobs:
             - CPU 参数调整（最小/最大状态、散热策略、Boost 模式）
             - 实时性能监控（CPU 使用率、频率、温度、内存）
             - 快捷预设：节能 / 平衡 / 极致性能
+            - 性能配置文件系统
+            - 启动自动应用
 
             ### 📦 安装方式
             - **推荐：** 下载 `.msi` 安装包，双击安装
