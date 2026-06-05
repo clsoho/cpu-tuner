@@ -8,15 +8,13 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
-  build-check:
-    name: Build Check
+  check:
+    name: Type Check
     runs-on: windows-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -38,8 +36,5 @@ jobs:
       - name: Check TypeScript
         run: npx tsc --noEmit
 
-      - name: Build frontend
-        run: npm run build
-
-      - name: Build Tauri (check only)
+      - name: Check Rust
         run: cargo check --manifest-path src-tauri/Cargo.toml

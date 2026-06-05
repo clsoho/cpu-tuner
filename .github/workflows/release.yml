@@ -1,24 +1,23 @@
 name: Release
 
 on:
-  workflow_dispatch:
   push:
-    tags:
-      - "v*"
+    branches: [main]
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  release:
     name: Build & Release
     runs-on: windows-latest
     permissions:
       contents: write
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -37,18 +36,23 @@ jobs:
         with:
           workspaces: src-tauri
 
-      - name: Extract version
+      - name: Bump version
         id: version
         shell: bash
         run: |
-          if [[ -n "${GITHUB_REF_NAME#v}" && "$GITHUB_REF_NAME" != "${{ github.ref_name }}" ]]; then
-            echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+          LATEST_TAG=$(git tag --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+          if [ -z "$LATEST_TAG" ]; then
+            NEW_VERSION="0.1.0"
           else
-            VERSION=$(jq -r '.version' src-tauri/tauri.conf.json)
-            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            MAJOR=$(echo "$LATEST_TAG" | sed 's/v//' | cut -d. -f1)
+            MINOR=$(echo "$LATEST_TAG" | sed 's/v//' | cut -d. -f2)
+            PATCH=$(echo "$LATEST_TAG" | sed 's/v//' | cut -d. -f3)
+            NEW_VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))"
           fi
+          jq ".version = \"$NEW_VERSION\"" src-tauri/tauri.conf.json > tmp.json && mv tmp.json src-tauri/tauri.conf.json
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
 
-      - name: Build Tauri app
+      - name: Build & Release
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -87,11 +91,11 @@ jobs:
 
             ### 📦 安装方式
             - **MSI 安装包** — 双击安装（推荐）
-            - **免安装 EXE** — 下载即用
+            - **EXE 绿色版** — 下载即用
 
             ### ⚠️ 注意
             - 仅支持 **Windows 10/11**
             - 部分功能需要 **管理员权限**
-          releaseDraft: ${{ github.ref_type != 'tag' }}
+          releaseDraft: false
           prerelease: false
           includeUpdaterJson: false
