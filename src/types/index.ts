@@ -1,7 +1,6 @@
-// ==================== Tauri invoke 封装 ====================
 import { invoke } from '@tauri-apps/api/core'
 
-// ========== Types ==========
+// ==================== CPU Info ====================
 
 export interface CpuInfo {
   name: string
@@ -18,11 +17,15 @@ export interface CpuInfo {
   architecture: string
 }
 
+// ==================== Monitoring ====================
+
 export interface CoreMetric {
   thread_id: number
-  usage_percent: number
+  c0_percent: number
   frequency_mhz: number
   temperature_c: number | null
+  multiplier: number
+  vid: number
 }
 
 export interface SystemSnapshot {
@@ -35,7 +38,11 @@ export interface SystemSnapshot {
   ram_total_mb: number
   ram_used_mb: number
   ram_usage_percent: number
+  package_power_w: number | null
+  prochot_status: boolean | null
 }
+
+// ==================== Power Plans ====================
 
 export interface PowerPlan {
   guid: string
@@ -55,6 +62,29 @@ export interface PowerSchemeDetails {
   processor: ProcessorPowerSettings
 }
 
+// ==================== Turbo Power Limits (TPL) ====================
+
+export interface TplSettings {
+  power_limit_long_w: number | null
+  power_limit_short_w: number | null
+  turbo_time_window_s: number | null
+  mmio_lock: boolean
+  sync_mmio: boolean
+}
+
+// ==================== FIVR (Voltage) ====================
+
+export interface FivrData {
+  core_offset_mv: number | null
+  cache_offset_mv: number | null
+  gpu_offset_mv: number | null
+  system_agent_offset_mv: number | null
+  core_voltage_mv: number | null
+  cache_voltage_mv: number | null
+}
+
+// ==================== Profiles ====================
+
 export interface Profile {
   id: number
   name: string
@@ -70,8 +100,14 @@ export interface Profile {
   undervolt_gpu_mv: number | null
   power_limit_long_w: number | null
   power_limit_short_w: number | null
+  turbo_time_window_s: number | null
   disable_turbo: boolean | null
   disable_bd_prochot: boolean | null
+  speed_step: boolean | null
+  speed_shift: boolean | null
+  c1e: boolean | null
+  clock_modulation_duty: number | null
+  set_multiplier: number | null
 }
 
 export interface ProfileConfig {
@@ -80,9 +116,12 @@ export interface ProfileConfig {
   auto_apply_on_startup: boolean
   minimize_to_tray: boolean
   start_with_windows: boolean
+  alarm_temp_threshold: number | null
+  battery_profile_id: number | null
+  ac_profile_id: number | null
 }
 
-// ========== API Calls ==========
+// ==================== API Calls ====================
 
 export async function getCpuInfo(): Promise<CpuInfo> {
   return invoke('get_cpu_info')
@@ -116,10 +155,6 @@ export async function getPowerSchemeDetails(guid: string): Promise<PowerSchemeDe
   return invoke('get_power_scheme_details', { schemeGuid: guid })
 }
 
-export async function getProcessorPowerSettings(guid: string): Promise<ProcessorPowerSettings> {
-  return invoke('get_processor_power_settings', { schemeGuid: guid })
-}
-
 export async function setProcessorPowerSettings(
   schemeGuid: string,
   settings: ProcessorPowerSettings,
@@ -148,6 +183,33 @@ export async function resetProfiles(): Promise<string> {
   return invoke('reset_profiles')
 }
 
+// TPL
+export async function getTplSettings(): Promise<TplSettings> {
+  return invoke('get_tpl_settings')
+}
+
+export async function setTplSettings(settings: TplSettings): Promise<string> {
+  return invoke('set_tpl_settings', { settings })
+}
+
+// FIVR
+export async function getFivrData(): Promise<FivrData> {
+  return invoke('get_fivr_data')
+}
+
+export async function setFivrOffset(target: string, offsetMv: number): Promise<string> {
+  return invoke('set_fivr_offset', { target, offsetMv })
+}
+
+// Clock Modulation
+export async function setClockModulation(dutyPercent: number): Promise<string> {
+  return invoke('set_clock_modulation', { dutyPercent })
+}
+
+export async function getFreqLimit(): Promise<number[]> {
+  return invoke('get_freq_limit')
+}
+
 // Autostart
 export async function checkAutostart(): Promise<boolean> {
   return invoke('check_autostart')
@@ -155,4 +217,9 @@ export async function checkAutostart(): Promise<boolean> {
 
 export async function setAutostart(enabled: boolean): Promise<void> {
   return invoke('set_autostart_cmd', { enabled })
+}
+
+// TS Bench
+export async function runTsBench(threads: number, iterations: number): Promise<{score: number; timeMs: number}> {
+  return invoke('run_ts_bench', { threads, iterations })
 }

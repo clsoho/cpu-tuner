@@ -2,111 +2,63 @@ import { useEffect, useState } from 'react'
 import { useAppStore } from '../../stores/appStore'
 import * as api from '../../types'
 
-const HISTORY_LENGTH = 120
+const HIST = 120
 
 export default function MonitorPage() {
-  const { cpuInfo, metrics, metricsHistory, startMonitoring, stopMonitoring } = useAppStore()
-  const [running, setRunning] = useState(false)
+  const { metrics, metricsHistory, cpuInfo, startMonitoring, stopMonitoring } = useAppStore()
+  const [live, setLive] = useState(false)
 
-  useEffect(() => {
-    startMonitoring()
-    setRunning(true)
-    return () => stopMonitoring()
-  }, [])
+  useEffect(() => { startMonitoring(); setLive(true); return () => stopMonitoring() }, [])
 
-  const toggleRun = () => {
-    if (running) {
-      stopMonitoring()
-      setRunning(false)
-    } else {
-      startMonitoring()
-      setRunning(true)
-    }
-  }
+  const toggle = () => { if (live) { stopMonitoring(); setLive(false) } else { startMonitoring(); setLive(true) } }
+
+  if (!metrics) return <div className="app-loading"><div className="spinner"/><p>等待数据…</p></div>
 
   return (
-    <div className="monitor-page">
+    <div>
       <div className="monitor-header">
         <h2>实时监控</h2>
-        <div className="monitor-controls">
-          <div className={`status-indicator ${running ? 'active' : ''}`}>
-            <span className="status-dot" />
-            <span>{running ? '监控中' : '已暂停'}</span>
-          </div>
-          <button className={`btn-run ${running ? 'btn-stop' : 'btn-start'}`} onClick={toggleRun}>
-            {running ? '⏸ 暂停' : '▶ 开始'}
-          </button>
+        <div className="monitor-status">
+          <span style={{display:'flex', alignItems:'center', gap:5, fontSize:12}}>
+            <span className={`status-dot ${live ? 'live' : ''}`} />
+            {live ? '监控中' : '已暂停'}
+          </span>
+          <button className={`btn ${live ? 'btn-ghost' : 'btn-green'} btn-sm`} onClick={toggle}>{live ? '⏸ 暂停' : '▶ 开始'}</button>
         </div>
       </div>
 
-      {/* Summary Cards */}
-      {metrics && (
-        <div className="monitor-summary">
-          <SummaryCard
-            label="CPU 总使用率"
-            value={`${metrics.cpu_usage_total.toFixed(1)}%`}
-            color={metrics.cpu_usage_total > 80 ? '#ef4444' : '#3b82f6'}
-          />
-          {metrics.cpu_temp_c != null && (
-            <SummaryCard
-              label="温度"
-              value={`${metrics.cpu_temp_c.toFixed(1)}°C`}
-              color={metrics.cpu_temp_c > 85 ? '#ef4444' : '#f59e0b'}
-            />
-          )}
-          <SummaryCard
-            label="当前频率"
-            value={`${metrics.cpu_freq_current_mhz.toFixed(0)} MHz`}
-            color="#22c55e"
-          />
-          <SummaryCard
-            label="线程数"
-            value={`${metrics.cpu_threads}`}
-            color="#8b5cf6"
-          />
-        </div>
-      )}
+      {/* Summary Pills */}
+      <div className="summary-row">
+        <Pill label="CPU%" value={`${metrics.cpu_usage_total.toFixed(1)}%`} color={gC(metrics.cpu_usage_total, 50, 80)} />
+        <Pill label="温度" value={metrics.cpu_temp_c != null ? `${metrics.cpu_temp_c.toFixed(1)}°C` : '—'} color={metrics.cpu_temp_c != null ? gC(metrics.cpu_temp_c, 60, 85) : 'var(--text-muted)'} />
+        <Pill label="频率" value={`${metrics.cpu_freq_current_mhz.toFixed(0)} MHz`} color="var(--cyan)" />
+        <Pill label="内存" value={`${metrics.ram_usage_percent.toFixed(0)}%`} color={gC(metrics.ram_usage_percent, 60, 80)} />
+        <Pill label="线程" value={`${metrics.cpu_threads}`} color="var(--purple)" />
+        <Pill label="RAM" value={`${(metrics.ram_used_mb / 1024).toFixed(1)} / ${(metrics.ram_total_mb / 1024).toFixed(0)} GB`} color="var(--text-secondary)" />
+      </div>
 
-      {/* CPU Usage Chart */}
-      {metrics && metrics.cores.length > 0 && (
-        <div className="chart-section">
-          <h3>线程使用率</h3>
-          <CpuUsageChart history={metricsHistory} threadCount={metrics.cores.length} />
+      {/* Chart */}
+      {metricsHistory.length > 2 && (
+        <div className="chart-wrap">
+          <h3>线程使用率趋势 (最近 {HIST}s)</h3>
+          <UsageChart history={metricsHistory} threads={metrics.cores.length} />
         </div>
       )}
 
       {/* Per-Thread Table */}
-      {metrics && metrics.cores.length > 0 && (
-        <div className="threads-table-container">
-          <h3>线程详情</h3>
-          <table className="threads-table">
-            <thead>
-              <tr>
-                <th>线程</th>
-                <th>使用率</th>
-                <th>频率</th>
-                {metrics.cores.some(c => c.temperature_c != null) && <th>温度</th>}
-                <th>可视化</th>
-              </tr>
-            </thead>
+      {metrics.cores.length > 0 && (
+        <div className="threads-wrap">
+          <h3>线程详情 ({metrics.cores.length})</h3>
+          <table className="tt">
+            <thead><tr><th>ID</th><th>Usage</th><th>Freq</th>{metrics.cores.some(c => c.temperature_c != null) && <th>Temp</th>}<th></th></tr></thead>
             <tbody>
-              {metrics.cores.map(core => (
-                <tr key={core.thread_id}>
-                  <td><span className="thread-id">T{core.thread_id}</span></td>
-                  <td>{core.usage_percent.toFixed(1)}%</td>
-                  <td>{core.frequency_mhz > 0 ? `${core.frequency_mhz.toFixed(0)} MHz` : '—'}</td>
-                  {core.temperature_c != null && <td>{core.temperature_c.toFixed(1)}°C</td>}
-                  <td>
-                    <div className="mini-bar">
-                      <div
-                        className="mini-bar-fill"
-                        style={{
-                          width: `${Math.min(core.usage_percent, 100)}%`,
-                          backgroundColor: core.usage_percent > 80 ? '#ef4444' : core.usage_percent > 50 ? '#f59e0b' : '#3b82f6',
-                        }}
-                      />
-                    </div>
-                  </td>
+              {metrics.cores.map(c => (
+                <tr key={c.thread_id}>
+                  <td style={{color:'var(--accent)'}}>T{c.thread_id}</td>
+                  <td style={{color: gC(c.c0_percent, 50, 80)}}>{c.c0_percent.toFixed(1)}%</td>
+                  <td>{c.frequency_mhz > 0 ? `${(c.frequency_mhz / 1000).toFixed(2)} GHz` : '—'}</td>
+                  {c.temperature_c != null && <td>{c.temperature_c.toFixed(1)}°C</td>}
+                  <td><div className="mini-bar"><div className="mini-bar-fill" style={{width:`${Math.min(c.c0_percent,100)}%`, backgroundColor: gC(c.c0_percent, 50, 80)}}/></div></td>
                 </tr>
               ))}
             </tbody>
@@ -117,122 +69,50 @@ export default function MonitorPage() {
   )
 }
 
-function SummaryCard({ label, value, color }: { label: string; value: string; color: string }) {
+function Pill({label, value, color}: {label:string; value:string; color:string}) {
   return (
-    <div className="summary-card" style={{ borderColor: color }}>
-      <div className="summary-label">{label}</div>
-      <div className="summary-value" style={{ color }}>{value}</div>
+    <div className="summary-pill" style={{borderLeftColor: color}}>
+      <div className="s-lbl">{label}</div>
+      <div className="s-val" style={{color}}>{value}</div>
     </div>
   )
 }
 
-function CpuUsageChart({ history, threadCount }: { history: api.CoreMetric[][]; threadCount: number }) {
-  const width = 900
-  const height = 300
-  const padding = { top: 20, right: 10, bottom: 30, left: 40 }
-  const chartW = width - padding.left - padding.right
-  const chartH = height - padding.top - padding.bottom
+function gC(v: number, warn: number, hot: number) { return v > hot ? 'var(--red)' : v > warn ? 'var(--amber)' : 'var(--green)' }
 
-  const maxThreads = Math.max(threadCount, 1)
-  const rows = 3 // Show first 8 threads in 3 rows
-  const threadCount2 = threadCount
-  const rowsNeeded = Math.min(threadCount2, 16)
-  
-  const colors = [
-    '#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6',
-    '#ec4899', '#06b6d4', '#f97316', '#14b8a6', '#6366f1',
-    '#84cc16', '#f43f5e', '#0ea5e9', '#d946ef', '#eab308',
-    '#a855f7', '#10b981', '#f97316', '#6366f1', '#ec4899',
-    '#06b6d4', '#22c55e', '#f59e0b', '#ef4444',
-  ]
+function UsageChart({history, threads}: {history: api.CoreMetric[][]; threads: number}) {
+  const w = 900, h = 200, pad = {l:36, r:8, t:8, b:22}
+  const cw = w - pad.l - pad.r, ch = h - pad.t - pad.b
+  const maxShow = Math.min(threads, 16)
+  const colors = ['#3b82f6','#22c55e','#f59e0b','#ef4444','#8b5cf6','#ec4899','#06b6d4','#f97316','#14b8a6','#6366f1','#84cc16','#f43f5e','#0ea5e9','#d946ef','#eab308','#a855f7']
 
-  if (rowsNeeded === 0) return <p className="no-data">没有数据</p>
-  
-  const rowsPerDisplay = Math.min(Math.ceil(threadCount / 16), 1)
-  
   return (
-    <div className="chart-container">
-      <svg
-        width="100%"
-        viewBox={`0 0 ${width} ${chartH * rowsNeeded + padding.top * 2 + 40 * (rowsNeeded - 1)}`}
-        className="svg-chart"
-      >
-        {/* Grid */}
-        {Array.from({ length: rowsNeeded }).map((_, r) => {
-          const startY = padding.top + r * (chartH + 40)
-          return (
-            <g key={r}>
-              {[0, 25, 50, 75, 100].map(v => (
-                <line
-                  key={v}
-                  x1={padding.left}
-                  y1={startY + chartH - (v / 100) * chartH}
-                  x2={padding.left + chartW}
-                  y2={startY + chartH - (v / 100) * chartH}
-                  stroke="var(--border-primary)"
-                  strokeWidth="0.5"
-                />
-              ))}
-              {[0, 25, 50, 75, 100].map(v => (
-                <text
-                  key={v}
-                  x={padding.left - 5}
-                  y={startY + chartH - (v / 100) * chartH + 4}
-                  fontSize="10"
-                  fill="var(--text-tertiary)"
-                  textAnchor="end"
-                >
-                  {v}
-                </text>
-              ))}
-            </g>
-          )
-        })}
-
-        {/* Lines per thread */}
-        {Array.from({ length: threadCount }).map((_, threadIdx) => {
-          const threadIdx2 = threadIdx
-          const row = Math.floor(threadIdx2 / 16)
-          if (row >= rowsNeeded) return null
-          const col = threadIdx2 % 16
-          const startY = padding.top + row * (chartH + 40)
-          
-          const points: [number, number][] = []
-          for (let i = 0; i < HISTORY_LENGTH; i++) {
-            const sample = history[i]
-            const metric = sample?.[threadIdx2]
-            if (metric != null && metric.usage_percent != null) {
-              const x = padding.left + (i / (HISTORY_LENGTH - 1)) * chartW
-              const y = startY + chartH - (Math.min(metric.usage_percent, 100) / 100) * chartH
-              points.push([x, y])
-            }
-          }
-
-          if (points.length < 2) return null
-          const d = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(' ')
-
-          return (
-            <g key={threadIdx2}>
-              <path
-                d={d}
-                fill="none"
-                stroke={colors[threadIdx2 % colors.length]}
-                strokeWidth="1"
-                opacity="0.8"
-              />
-              {/* Thread label */}
-              <text
-                x={padding.left}
-                y={startY - 5}
-                fontSize="10"
-                fill={colors[threadIdx2 % colors.length]}
-              >
-                T{threadIdx2}
-              </text>
-            </g>
-          )
-        })}
-      </svg>
-    </div>
+    <svg width="100%" viewBox={`0 0 ${w} ${h}`} style={{display:'block'}}>
+      {/* Grid */}
+      {[0,25,50,75,100].map(v => {
+        const y = pad.t + ch - (v/100)*ch
+        return <g key={v}><line x1={pad.l} y1={y} x2={pad.l+cw} y2={y} stroke="var(--border-subtle)" strokeWidth=".5"/><text x={pad.l-4} y={y+3} textAnchor="end" fill="var(--text-muted)" fontSize="9">{v}</text></g>
+      })}
+      {/* Time labels */}
+      {[0, 30, 60, 90, 120].map(t => {
+        const x = pad.l + (t / HIST) * cw
+        return <text key={t} x={x} y={h-4} textAnchor="middle" fill="var(--text-muted)" fontSize="9">{t}s</text>
+      })}
+      {/* Lines */}
+      {Array.from({length: maxShow}).map((_, i) => {
+        const pts: [number, number][] = []
+        for (let s = 0; s < history.length; s++) {
+          const m = history[s]?.[i]
+          if (m != null && m.c0_percent != null) pts.push([pad.l + (s / (HIST - 1)) * cw, pad.t + ch - (Math.min(m.c0_percent, 100) / 100) * ch])
+        }
+        if (pts.length < 2) return null
+        const d = pts.map(([x,y], j) => `${j===0?'M':'L'} ${x.toFixed(1)} ${y.toFixed(1)}`).join(' ')
+        return <path key={i} d={d} fill="none" stroke={colors[i % colors.length]} strokeWidth=".9" opacity=".75"/>
+      })}
+      {/* Legend */}
+      {Array.from({length: maxShow}).map((_, i) => (
+        <text key={i} x={pad.l + 4} y={pad.t + 8 + i * 10} fill={colors[i % colors.length]} fontSize="8" opacity=".7">T{i}</text>
+      ))}
+    </svg>
   )
 }

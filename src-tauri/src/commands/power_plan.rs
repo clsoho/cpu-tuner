@@ -55,47 +55,62 @@ pub fn run_powercfg(args: &[&str]) -> Result<String, String> {
 }
 
 /// 解析 powercfg /list 输出
+fn extract_guid(line: &str) -> Option<(String, usize)> {
+    // Scan for a GUID-like pattern: 8-4-4-4-12 hex
+    let bytes = line.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let mut j = i;
+        let mut seg_lens = 0;
+        let mut seg_count = 0;
+        let start = i;
+        
+        while j < bytes.len() {
+            // Count hex chars
+            let hex_start = j;
+            while j < bytes.len() && ((bytes[j] >= b'0' && bytes[j] <= b'9') || (bytes[j] >= b'a' && bytes[j] <= b'f') || (bytes[j] >= b'A' && bytes[j] <= b'F')) {
+                j += 1;
+            }
+            if j == hex_start { break; }
+            seg_lens += j - hex_start;
+            seg_count += 1;
+            
+            if seg_count == 5 { break; }
+            // Expect dash
+            if j < bytes.len() && bytes[j] == b'-' {
+                j += 1;
+            } else if seg_count < 5 {
+                break;
+            }
+        }
+        
+        if seg_count == 5 && seg_lens == 32 {
+            let guid_str = &line[start..j];
+            let parts: Vec<&str> = guid_str.split('-').collect();
+            if parts.len() == 5 && parts[0].len() == 8 && parts[1].len() == 4 && parts[2].len() == 4 && parts[3].len() == 4 && parts[4].len() == 12 {
+                return Some((guid_str.to_string(), j));
+            }
+        }
+        i += 1;
+    }
+    None
+}
+
 fn parse_power_plans(output: &str) -> Vec<PowerPlan> {
     let mut plans = Vec::new();
 
     for line in output.lines() {
         let line = line.trim();
-        if line.is_empty() || line.starts_with("现有的电源方案") || line.starts_with("Existing") {
+        if line.is_empty() || line.starts_with("---") || line.to_lowercase().starts_with("existing") || line.to_lowercase().starts_with("现有的") {
             continue;
         }
-
-        let is_active = line.contains('*');
-
-        // Try {GUID} format first
-        if let Some(start) = line.find('{') {
-            if let Some(end) = line.find('}') {
-                let guid = line[start + 1..end].to_string();
-                let name = line[end + 1..].trim()
-                    .trim_start_matches('(')
-                    .trim_end_matches(')')
-                    .trim()
-                    .to_string();
-                if !guid.is_empty() && !name.is_empty() {
-                    plans.push(PowerPlan { guid, name, is_active });
-                }
-                continue;
-            }
-        }
-
-        // Try hex GUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-        if let Some(guid_end) = line.find(|c: char| c.is_ascii_whitespace() || c == '(') {
-            let potential_guid = &line[..guid_end];
-            if is_valid_guid(potential_guid) {
-                let guid = potential_guid.to_string();
-                let name = line[guid_end..].trim()
-                    .trim_start_matches('(')
-                    .trim_end_matches(')')
-                    .trim()
-                    .to_string();
-                if !name.is_empty() {
-                    plans.push(PowerPlan { guid, name, is_active });
-                }
-            }
+        let is_active = line.ends_with('*');
+        if let Some((guid, end)) = extract_guid(line) {
+            // Extract name: everything after GUID
+            let after = line[end..].trim();
+            let cleaned = after.trim().trim_start_matches('(').trim_end_matches(')').trim_end_matches('*').trim();
+            let name = if cleaned.is_empty() { format!("Plan {}", &guid[..8]) } else { cleaned.to_string() };
+            plans.push(PowerPlan { guid, name, is_active });
         }
     }
 
@@ -122,28 +137,13 @@ fn is_valid_guid(s: &str) -> bool {
     true
 }
 
-/// Get active power scheme GUID (fixed to handle both formats)
+/// Get active power scheme GUID
 pub fn get_active_scheme_guid() -> Result<String, String> {
     let output = run_powercfg(&["/getactivescheme"])?;
     for line in output.lines() {
-        let line = line.trim();
-
-        // Try {GUID} format first
-        if let Some(start) = line.find('{') {
-            if let Some(end) = line.find('}') {
-                return Ok(line[start + 1..end].to_string());
-            }
-        }
-
-        // Fallback: hex GUID format "Power Scheme GUID: xxxxxxxx-xxxx-..."
-        if let Some(pos) = line.find("GUID:") {
-            let rest = line[pos + 5..].trim();
-            if let Some(space_pos) = rest.find(' ') {
-                let hex_guid = rest[..space_pos].trim();
-                if is_valid_guid(hex_guid) {
-                    return Ok(hex_guid.to_string());
-                }
-            }
+        // Use extract_guid which handles both {GUID} and hex formats
+        if let Some((guid, _)) = extract_guid(line) {
+            return Ok(guid);
         }
     }
     Err("无法获取活动电源方案 GUID".to_string())
@@ -159,44 +159,15 @@ pub async fn get_power_plans() -> Result<Vec<PowerPlan>, String> {
     Ok(plans)
 }
 
-/// 获取当前活动的电源计划
+/// Get current active power plan
 #[command]
 pub async fn get_active_power_plan() -> Result<PowerPlan, String> {
-    info!("[电源] 获取活动电源计划");
     let output = run_powercfg(&["/getactivescheme"])?;
-
     for line in output.lines() {
-        let line = line.trim();
-        if let Some(start) = line.find('{') {
-            if let Some(end) = line.find('}') {
-                let guid = line[start + 1..end].to_string();
-                let name = line[end + 1..].trim()
-                    .trim_start_matches('(')
-                    .trim_end_matches(')')
-                    .trim()
-                    .to_string();
-                return Ok(PowerPlan { guid, name, is_active: true });
-            }
-        }
-
-        // Try hex GUID format
-        if let Some(pos) = line.find("GUID:") {
-            let rest = line[pos + 5..].trim();
-            if let Some(space_pos) = rest.find(' ') {
-                let hex_guid = rest[..space_pos].trim();
-                if is_valid_guid(hex_guid) {
-                    let name = rest[space_pos..].trim()
-                        .trim_start_matches('(')
-                        .trim_end_matches(')')
-                        .trim()
-                        .to_string();
-                    return Ok(PowerPlan {
-                        guid: hex_guid.to_string(),
-                        name,
-                        is_active: true,
-                    });
-                }
-            }
+        if let Some((guid, end)) = extract_guid(line) {
+            let after = line[end..].trim();
+            let name = after.trim().trim_start_matches('(').trim_end_matches(')').trim_end_matches('*').trim();
+            return Ok(PowerPlan { guid, name: name.to_string(), is_active: true });
         }
     }
     Err("无法获取活动电源计划".to_string())

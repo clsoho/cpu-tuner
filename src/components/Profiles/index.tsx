@@ -1,135 +1,106 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useAppStore } from '../../stores/appStore'
+import * as api from '../../types'
 
-export default function Profiles() {
-  const { profileConfig, applyProfile, fetchProfiles } = useAppStore()
+export default function ProfilesPage() {
+  const { profileConfig, applyProfile, updateProfile, fetchProfiles, startMonitoring } = useAppStore()
+  const [editing, setEditing] = useState<api.Profile | null>(null)
   const [applying, setApplying] = useState<number | null>(null)
 
-  useEffect(() => {
-    fetchProfiles()
-  }, [])
+  if (!profileConfig) return <div className="app-loading"><div className="spinner"/><p>加载配置…</p></div>
 
-  if (!profileConfig) return <p>加载中…</p>
-  const profiles = Object.values(profileConfig.profiles)
+  const profiles = Object.values(profileConfig.profiles).sort((a,b) => a.id - b.id)
   const activeId = profileConfig.active_profile_id
+
+  const handleApply = async (id: number) => {
+    setApplying(id)
+    await applyProfile(id)
+    setApplying(null)
+  }
 
   return (
     <div className="profiles-page">
       <h2>性能配置</h2>
-      <p className="page-desc">一键切换 CPU 性能模式 — 类似 ThrottleStop 的 Profile 按钮</p>
+      <p className="subtitle">一键切换 CPU 性能参数 — 类比 ThrottleStop Profile 按钮</p>
 
-      <div className="profile-quick-grid">
+      <div className="profile-cards">
         {profiles.map(p => (
           <div key={p.id} className={`profile-card ${activeId === p.id ? 'active' : ''}`}>
-            <div className="profile-card-header">
+            {activeId === p.id && <span className="active-badge">ACTIVE</span>}
+            <div className="profile-card-head">
               <span className="profile-emoji">{p.icon}</span>
-              <div className="profile-name">{p.name}</div>
+              <div>
+                <div className="profile-card-name">{p.name}</div>
+                <div style={{fontSize:10, color:'var(--text-muted)'}}>ID: {p.id}</div>
+              </div>
             </div>
-
             <div className="profile-specs">
-              {p.min_processor_state != null && <Spec label="Min CPU" value={`${p.min_processor_state}%`} />}
-              {p.max_processor_state != null && <Spec label="Max CPU" value={`${p.max_processor_state}%`} />}
+              <Spec label="Min CPU" value={p.min_processor_state != null ? `${p.min_processor_state}%` : '—'} />
+              <Spec label="Max CPU" value={p.max_processor_state != null ? `${p.max_processor_state}%` : '—'} />
               <Spec label="散热" value={coolingLabel(p.system_cooling_policy)} />
               <Spec label="Boost" value={boostLabel(p.processor_boost_mode)} />
-              {p.speed_shift_epp != null && <Spec label="EPP" value={`${p.speed_shift_epp}`} />}
+              <Spec label="EPP" value={p.speed_shift_epp != null ? `${p.speed_shift_epp}` : '—'} />
+              <Spec label="Turbo" value={p.disable_turbo === false ? 'ON' : p.disable_turbo === true ? 'OFF' : '—'} />
             </div>
-
-            <button
-              className={`btn-apply ${activeId === p.id ? 'btn-apply-active' : ''}`}
-              disabled={applying !== null}
-              onClick={async () => {
-                setApplying(p.id)
-                await applyProfile(p.id)
-                setApplying(null)
-              }}
-            >
-              {applying === p.id ? '应用中…' : activeId === p.id ? '当前激活 ✓' : '应用此配置'}
-            </button>
+            <div className="profile-card-actions">
+              <button className={`btn ${activeId === p.id ? 'btn-green' : 'btn-primary'}`} disabled={applying !== null} onClick={() => handleApply(p.id)}>
+                {applying === p.id ? '⏳ 应用…' : activeId === p.id ? '✓ 已激活' : '应用'}
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setEditing(p)}>编辑</button>
+            </div>
           </div>
         ))}
       </div>
 
-      {/* Settings Info */}
-      <div className="profiles-info">
-        <h3>参数说明</h3>
-        <table className="params-table">
-          <thead>
-            <tr>
-              <th>参数</th>
-              <th>说明</th>
-              <th>省电</th>
-              <th>均衡</th>
-              <th>高性能</th>
-              <th>极致</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>Min CPU</td>
-              <td>CPU 最低占用百分比</td>
-              <td>5%</td>
-              <td>5%</td>
-              <td>100%</td>
-              <td>100%</td>
-            </tr>
-            <tr>
-              <td>Max CPU</td>
-              <td>CPU 最高占用百分比</td>
-              <td>50%</td>
-              <td>100%</td>
-              <td>100%</td>
-              <td>100%</td>
-            </tr>
-            <tr>
-              <td>EPP</td>
-              <td>Speed Shift 性能偏好</td>
-              <td>212</td>
-              <td>128</td>
-              <td>32</td>
-              <td>0</td>
-            </tr>
-            <tr>
-              <td>Boost</td>
-              <td>Turbo Boost 模式</td>
-              <td>Disabled</td>
-              <td>Efficient</td>
-              <td>Aggressive</td>
-              <td>Aggressive</td>
-            </tr>
-            <tr>
-              <td>散热</td>
-              <td>风扇策略</td>
-              <td>被动</td>
-              <td>主动</td>
-              <td>主动</td>
-              <td>主动</td>
-            </tr>
-          </tbody>
-        </table>
+      {/* Comparison Table */}
+      <div className="card" style={{marginTop: 8}}>
+        <div className="card-head"><span className="card-title">参数对照</span></div>
+        <div className="card-body" style={{overflowX:'auto'}}>
+          <table className="tt">
+            <thead><tr><th>参数</th>{profiles.map(p => <th key={p.id}>{p.icon} {p.name}</th>)}</tr></thead>
+            <tbody>
+              <CompRow label="Min CPU" fn={p => p.min_processor_state != null ? `${p.min_processor_state}%` : '—'} profiles={profiles} />
+              <CompRow label="Max CPU" fn={p => p.max_processor_state != null ? `${p.max_processor_state}%` : '—'} profiles={profiles} />
+              <CompRow label="散热" fn={p => coolingLabel(p.system_cooling_policy)} profiles={profiles} />
+              <CompRow label="Boost" fn={p => boostLabel(p.processor_boost_mode)} profiles={profiles} />
+              <CompRow label="EPP" fn={p => p.speed_shift_epp != null ? `${p.speed_shift_epp}` : '—'} profiles={profiles} />
+              <CompRow label="Turbo" fn={p => p.disable_turbo === false ? 'ON' : p.disable_turbo === true ? 'OFF' : '—'} profiles={profiles} />
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Edit Modal */}
+      {editing && <EditModal profile={editing} onClose={() => setEditing(null)} onSave={async pf => { await updateProfile(pf); setEditing(null) }} />}
+    </div>
+  )
+}
+
+function Spec({label, value}: {label: string; value: string}) {
+  return <div className="spec"><span className="spec-lbl">{label}</span><span className="spec-val">{value}</span></div>
+}
+function CompRow({label, fn, profiles}: {label: string; fn: (p: api.Profile) => string; profiles: api.Profile[]}) {
+  return (
+    <tr><td style={{color:'var(--text-muted)', fontFamily:'inherit'}}>{label}</td>{profiles.map(p => <td key={p.id}>{fn(p)}</td>)}</tr>
+  )
+}
+function EditModal({profile, onClose, onSave}: {profile: api.Profile; onClose: () => void; onSave: (p: api.Profile) => void}) {
+  const [data, setData] = useState({...profile})
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <h3>编辑: {profile.icon} {profile.name}</h3>
+        <div className="form-group"><label>名称</label><input value={data.name} onChange={e => setData({...data, name: e.target.value})} /></div>
+        <div className="form-group"><label>Icon</label><input value={data.icon} onChange={e => setData({...data, icon: e.target.value})} /></div>
+        <div className="form-group"><label>Min Processor State (%)</label><input type="number" min={0} max={100} value={data.min_processor_state ?? ''} onChange={e => setData({...data, min_processor_state: e.target.value ? +e.target.value : null})} /></div>
+        <div className="form-group"><label>Max Processor State (%)</label><input type="number" min={0} max={100} value={data.max_processor_state ?? ''} onChange={e => setData({...data, max_processor_state: e.target.value ? +e.target.value : null})} /></div>
+        <div className="form-group"><label>System Cooling Policy</label><select value={data.system_cooling_policy ?? ''} onChange={e => setData({...data, system_cooling_policy: e.target.value ? +e.target.value : null})}><option value="">默认</option><option value={0}>被动 (0)</option><option value={1}>主动 (1)</option></select></div>
+        <div className="form-group"><label>Boost Mode</label><select value={data.processor_boost_mode ?? ''} onChange={e => setData({...data, processor_boost_mode: e.target.value ? +e.target.value : null})}><option value="">默认</option><option value={0}>Disabled</option><option value={1}>Enabled</option><option value={2}>Efficient</option><option value={3}>Aggressive</option></select></div>
+        <div className="form-group"><label>Speed Shift EPP (0-255)</label><input type="number" min={0} max={255} value={data.speed_shift_epp ?? ''} onChange={e => setData({...data, speed_shift_epp: e.target.value ? +e.target.value : null})} /></div>
+        <div className="modal-actions"><button className="btn btn-ghost" onClick={onClose}>取消</button><button className="btn btn-primary" onClick={() => onSave(data)}>保存</button></div>
       </div>
     </div>
   )
 }
-
-function Spec({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="spec">
-      <span className="spec-label">{label}</span>
-      <span className="spec-value">{value}</span>
-    </div>
-  )
-}
-
-function coolingLabel(mode: number | null | undefined): string {
-  return mode === 0 ? '被动 🌀' : mode === 1 ? '主动 💨' : '默认'
-}
-
-function boostLabel(mode: number | null | undefined): string {
-  switch (mode) {
-    case 0: return 'Disabled ❌'
-    case 1: return 'Enabled ✅'
-    case 2: return 'Efficient ⚡'
-    case 3: return 'Aggressive 🔥'
-    default: return '默认'
-  }
-}
+function coolingLabel(v: number | null | undefined): string { return v === 0 ? '被动' : v === 1 ? '主动' : '—' }
+function boostLabel(v: number | null | undefined): string { return v === 0 ? 'Disabled' : v === 1 ? 'Enabled' : v === 2 ? 'Efficient' : v === 3 ? 'Aggressive' : '—' }
