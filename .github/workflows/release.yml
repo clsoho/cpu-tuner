@@ -1,13 +1,13 @@
 name: Release
 
 on:
+  workflow_dispatch:
   push:
     tags:
       - "v*"
 
 env:
   CARGO_TERM_COLOR: always
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   build:
@@ -37,17 +37,16 @@ jobs:
         with:
           workspaces: src-tauri
 
-      - name: Extract version from tag
+      - name: Extract version
         id: version
         shell: bash
-        run: echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
-
-      - name: Sync version to tauri.conf.json
-        shell: bash
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
-          echo "Updated tauri.conf.json version to $VERSION"
+          if [[ -n "${GITHUB_REF_NAME#v}" && "$GITHUB_REF_NAME" != "${{ github.ref_name }}" ]]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+          else
+            VERSION=$(jq -r '.version' src-tauri/tauri.conf.json)
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+          fi
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
@@ -59,24 +58,40 @@ jobs:
           releaseBody: |
             ## CPU Tuner v__VERSION__
 
-            ### 🔧 新功能
-            - 电源计划管理（创建、切换、删除）
-            - CPU 参数调整（最小/最大状态、散热策略、Boost 模式）
-            - 实时性能监控（CPU 使用率、频率、温度、内存）
-            - 快捷预设：节能 / 平衡 / 极致性能
-            - 性能配置文件系统
-            - 启动自动应用
+            ### 主面板 — Main
+            - 逐核心实时监控：C0% / 温度 / 频率 / 倍频 / VID 电压
+            - Set Multiplier — 手动锁定 CPU 倍频
+            - Clock Modulation — 时钟调制滑块
+            - SpeedStep / Speed Shift / C1E / BD PROCHOT / Turbo 开关
+            - Speed Shift EPP 调节（0–255）
+            - 4 种性能配置文件一键切换
+
+            ### FIVR — 电压调节
+            - Core / Cache / GPU / System Agent 电压偏移（-250 ~ +250 mV）
+            - 快速预设按钮
+
+            ### TPL — 功率限制
+            - PL1 / PL2 功耗限制
+            - Turbo Time Window 设置
+            - MMIO Lock / Sync MMIO
+            - 场景预设：Laptop / Balanced / Performance / Unlimited
+
+            ### Bench — CPU 基准测试
+            - 多线程基准测试，可配置线程与迭代次数
+
+            ### Options — 全局设置
+            - 配置文件编辑
+            - 最小化到系统托盘 / 开机自启 / 启动自动应用
+            - 温度告警
+            - 插入/断开电源自动切换配置
 
             ### 📦 安装方式
-            - **推荐：** 下载 `.msi` 安装包，双击安装
-            - **绿色版：** 下载 `.exe` 即可直接运行
+            - **MSI 安装包** — 双击安装（推荐）
+            - **免安装 EXE** — 下载即用
 
             ### ⚠️ 注意
             - 仅支持 **Windows 10/11**
             - 部分功能需要 **管理员权限**
-
-            ---
-            *构建时间：${{ github.event.head_commit.timestamp }}*
-          releaseDraft: false
+          releaseDraft: ${{ github.ref_type != 'tag' }}
           prerelease: false
           includeUpdaterJson: false

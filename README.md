@@ -4,7 +4,66 @@
 [![Release](https://github.com/clsoho/cpu-tuner/actions/workflows/release.yml/badge.svg)](https://github.com/clsoho/cpu-tuner/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-一个 Windows 桌面 CPU 性能调优工具，基于 Tauri v2 + React + TypeScript 构建。
+**CPU Tuner** 是一款 Windows 桌面 CPU 性能调优工具，灵感来自 [ThrottleStop](https://www.techpowerup.com/download/techpowerup-throttlestop/)，基于 Tauri v2 + React + TypeScript + Rust 构建。支持实时监控、电压偏移、功率限制、基准测试等完整功能。
+
+---
+
+## 📸 界面预览
+
+<!-- 截图待补充 -->
+
+---
+
+## ✨ 功能
+
+### 主面板 — Main
+- 逐核心实时监控：**C0%** (占用率)、**温度**、**频率 (MHz)**、**倍频 (Multiplier)**、**VID 电压**
+- **Set Multiplier** — 手动锁定 CPU 倍频
+- **Clock Modulation** — 时钟调制滑块 (0–100%)
+- SpeedStep / Speed Shift / C1E / BD PROCHOT / Turbo 开关
+- **Speed Shift EPP** 调节 (0–255)
+- 4 个性能配置文件一键切换（省电 / 均衡 / 高性能 / 极致）
+
+### FIVR — 电压调节
+- **Voltage Offset** 偏移滑块：Core / Cache / GPU / System Agent
+- 实时电压读数监控
+- 快速预设按钮（-150mV ~ 0mV）
+- ⚠ 注意：10 代+ CPU 可能已锁定电压调节
+
+### TPL — 功率限制
+- **PL1 (Power Limit 1)** — 长时间功耗限制 (W)
+- **PL2 (Power Limit 2)** — 短时间功耗限制 (W)
+- **Turbo Time Window** — 涡轮时间窗口 (s)
+- MMIO Lock / Sync MMIO
+- 快速场景预设：Laptop / Balanced / Performance / Unlimited
+
+### Bench — 基准测试
+- 多线程 CPU 基准测试
+- 可配置线程数和迭代次数
+- 实时评分
+
+### Options — 全局设置
+- 配置文件参数编辑（名称、EPP、Turbo、CPU 范围等）
+- 最小化到系统托盘 / 开机自启 / 启动时自动应用
+- 温度告警阈值
+- 插入电源 / 使用电池时自动切换配置
+
+---
+
+## 🖥️ 技术栈
+
+| 层级 | 技术 |
+|------|------|
+| 桌面框架 | Tauri v2 |
+| 前端 | React 18 + TypeScript |
+| 样式 | Tailwind CSS 3 + 自定义深色主题 |
+| 状态管理 | Zustand |
+| 后端 | Rust |
+| 系统信息 | sysinfo + WMI |
+| 电源管理 | Windows powercfg |
+| 系统托盘 | Tauri tray-icon (原生) |
+
+---
 
 ## 📥 下载
 
@@ -13,56 +72,35 @@
 - **`.msi`** — 标准安装包，推荐使用
 - **`.exe`** — 绿色免安装版，下载即用
 
-## 功能
+---
 
-### 1. 电源计划管理
-- 列出所有 Windows 电源方案
-- 一键切换活动电源计划
-- 创建自定义电源计划（基于现有计划复制）
-- 删除不需要的电源计划
-
-### 2. CPU 参数调整
-- **最小处理器状态** — 控制 CPU 最低频率百分比
-- **最大处理器状态** — 限制 CPU 最高频率（≤99% 可禁用 Turbo Boost）
-- **系统散热策略** — 被动/主动散热模式选择
-- **处理器性能提升模式** — 控制 Turbo Boost 行为（禁用/启用/主动/高效）
-- 快捷预设：节能模式、平衡模式、极致性能
-
-### 3. 性能监控
-- 实时 CPU 使用率（整体 + 每核心）
-- 实时 CPU 频率
-- CPU 温度（通过 WMI 获取）
-- 内存使用情况
-- 历史趋势图表（最近 60 个数据点）
-
-## 技术栈
-
-| 层级 | 技术 |
-|------|------|
-| 桌面框架 | Tauri v2 |
-| 前端 | React 18 + TypeScript |
-| 样式 | Tailwind CSS 3 |
-| 状态管理 | Zustand |
-| 动画 | Framer Motion |
-| 图标 | Lucide React |
-| 后端 | Rust |
-| 系统信息 | sysinfo crate |
-| 电源管理 | Windows powercfg |
-
-## 开发
+## 🛠️ 开发
 
 ```bash
 # 安装依赖
 npm install
 
-# 开发模式
+# 开发模式（前端 + Tauri 桌面应用）
 npm run tauri:dev
+
+# 仅前端开发
+npm run dev
 
 # 构建
 npm run tauri:build
 ```
 
-## 自动发布
+### 前提条件
+
+- **Windows 10/11**
+- **Node.js >= 18**
+- **Rust** (rustup)
+- **WebView2** (Windows 10+ 自带)
+- 运行需要**管理员权限**（部分电源设置需要）
+
+---
+
+## 🔄 自动发布
 
 项目配置了 GitHub Actions CI/CD：
 
@@ -88,12 +126,15 @@ git push origin main --tags
 3. 生成 `.msi` 安装包和 `.exe` 绿色版
 4. 创建 GitHub Release 并上传产物
 
-## 前提条件
+---
 
-- Windows 10/11
-- Node.js >= 18
-- Rust (rustup)
+## ⚠️ 免责声明
 
-## 许可
+调整 CPU 电压、功率限制和频率设置可能导致硬件损坏、系统不稳定或缩短硬件寿命。
+**使用本工具风险自负**。建议在调整参数时持续监控 CPU 温度（建议不超过 90°C）。
+
+---
+
+## 📄 许可
 
 MIT
