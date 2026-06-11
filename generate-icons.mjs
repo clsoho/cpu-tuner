@@ -25,77 +25,161 @@ function makeChunk(type, data) {
   return Buffer.concat([len, combined, crcBuf]);
 }
 
-function createPng(size) {
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(size, 0); ihdr.writeUInt32BE(size, 4);
-  ihdr[8] = 8; ihdr[9] = 6; // 8-bit RGBA
+const CYAN_BG = [0x00, 0xd4, 0xaa, 0xff];
+const WHITE = [0xff, 0xff, 0xff, 0xff];
 
-  const raw = Buffer.alloc(size * (size * 4 + 1));
-  let pos = 0;
-  for (let y = 0; y < size; y++) {
-    raw[pos++] = 0;
-    for (let x = 0; x < size; x++) {
-      raw[pos++] = 0x1E; raw[pos++] = 0x3A; raw[pos++] = 0x8A; raw[pos++] = 0xFF;
+function fillCircle(buf, w, cx, cy, r, color) {
+  for (let y = -r; y <= r; y++) {
+    for (let x = -r; x <= r; x++) {
+      if (x*x + y*y <= r*r) {
+        const o = ((cy + y) * w + (cx + x)) * 4;
+        buf[o] = color[0]; buf[o+1] = color[1]; buf[o+2] = color[2]; buf[o+3] = color[3];
+      }
     }
   }
+}
 
+function fillRing(buf, w, cx, cy, outerR, innerR, color) {
+  for (let y = -outerR; y <= outerR; y++) {
+    for (let x = -outerR; x <= outerR; x++) {
+      const d2 = x*x + y*y;
+      if (d2 <= outerR*outerR && d2 >= innerR*innerR) {
+        const o = ((cy + y) * w + (cx + x)) * 4;
+        buf[o] = color[0]; buf[o+1] = color[1]; buf[o+2] = color[2]; buf[o+3] = color[3];
+      }
+    }
+  }
+}
+
+function drawThickLine(buf, w, x0, y0, x1, y1, thick, color) {
+  const dx = Math.abs(x1-x0), dy = Math.abs(y1-y0);
+  const sx = x0<x1?1:-1, sy = y0<y1?1:-1;
+  let err = dx-dy, x = x0, y = y0;
+  while (true) {
+    for (let ty = -Math.floor(thick/2); ty <= Math.floor(thick/2); ty++)
+      for (let tx = -Math.floor(thick/2); tx <= Math.floor(thick/2); tx++)
+        fillPx(buf, w, x+tx, y+ty, color[0], color[1], color[2], color[3]);
+    if (x === x1 && y === y1) break;
+    const e2 = 2*err;
+    if (e2 > -dy) { err -= dy; x += sx; }
+    if (e2 < dx) { err += dx; y += sy; }
+  }
+}
+
+function fillPx(buf, w, x, y, r, g, b, a) {
+  if (x < 0 || x >= w || y < 0 || y >= w) return;
+  const o = (y * w + x) * 4;
+  buf[o] = r; buf[o+1] = g; buf[o+2] = b; buf[o+3] = a;
+}
+
+function makePngBytes(w, h, drawer) {
+  const raw = Buffer.alloc(h * (w * 4 + 1));
+  let pos = 0;
+  for (let y = 0; y < h; y++) {
+    raw[pos++] = 0;
+    for (let x = 0; x < w; x++) {
+      raw[pos++] = 0; raw[pos++] = 0; raw[pos++] = 0; raw[pos++] = 0;
+    }
+  }
+  drawer(raw, w, h);
   const compressed = zlib.deflateSync(raw);
   const sig = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
   return Buffer.concat([
     sig,
-    makeChunk('IHDR', ihdr),
+    makeChunk('IHDR', (() => { const b = Buffer.alloc(13); b.writeUInt32BE(w, 0); b.writeUInt32BE(h, 4); b[8] = 8; b[9] = 6; return b; })()),
     makeChunk('IDAT', compressed),
     makeChunk('IEND', Buffer.alloc(0))
   ]);
 }
 
-function createIco(size) {
-  const w = size, h = size;
-  const pixelData = Buffer.alloc(w * h * 4);
+function makeIcoBytes(w, h, drawer) {
+  const raw = Buffer.alloc(h * w * 4);
+  for (let i = 0; i < raw.length; i += 4) {
+    raw[i] = 0; raw[i+1] = 0; raw[i+2] = 0; raw[i+3] = 0;
+  }
+  drawer(raw, w, h);
+
+  const bgra = Buffer.alloc(raw.length);
+  for (let i = 0; i < raw.length; i += 4) {
+    const srcIdx = ((h - 1 - Math.floor(i/4/w)) * w + (i/4 % w)) * 4;
+    bgra[i] = raw[srcIdx+2]; bgra[i+1] = raw[srcIdx+1]; bgra[i+2] = raw[srcIdx]; bgra[i+3] = raw[srcIdx+3];
+  }
+
+  const andLineBytes = Math.ceil(w / 32) * 4;
+  const andMask = Buffer.alloc(h * andLineBytes, 0);
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
-      const o = (y * w + x) * 4;
-      pixelData[o] = 0x8A; pixelData[o+1] = 0x3A; pixelData[o+2] = 0x1E; pixelData[o+3] = 0xFF;
+      const srcIdx = (y * w + x) * 4;
+      if (raw[srcIdx+3] < 128) {
+        const bitIdx = y * andLineBytes * 8 + x;
+        andMask[Math.floor(bitIdx / 8)] |= (1 << (7 - (bitIdx % 8)));
+      }
     }
   }
 
-  const bmpHeaderSize = 40;
-  const buf = Buffer.alloc(6 + 16 + bmpHeaderSize + pixelData.length);
+  const bmpSize = 40;
+  const total = bmpSize + bgra.length + andMask.length;
+  const buf = Buffer.alloc(6 + 16 + total);
   let off = 0;
   buf.writeUInt16LE(0, off); off += 2;
   buf.writeUInt16LE(1, off); off += 2;
   buf.writeUInt16LE(1, off); off += 2;
-  buf[off++] = w; buf[off++] = h; buf[off++] = 0; buf[off++] = 0;
+  buf[off++] = w; buf[off++] = h;
+  buf[off++] = 0; buf[off++] = 0;
   buf.writeUInt16LE(1, off); off += 2;
   buf.writeUInt16LE(32, off); off += 2;
-  buf.writeUInt32LE(bmpHeaderSize + pixelData.length, off); off += 4;
+  buf.writeUInt32LE(total, off); off += 4;
   buf.writeUInt32LE(22, off); off += 4;
-  // BMP info
   buf.writeUInt32LE(40, off); off += 4;
   buf.writeInt32LE(w, off); off += 4;
   buf.writeInt32LE(h * 2, off); off += 4;
   buf.writeUInt16LE(1, off); off += 2;
   buf.writeUInt16LE(32, off); off += 2;
   buf.writeUInt32LE(0, off); off += 4;
-  buf.writeUInt32LE(pixelData.length, off); off += 4;
+  buf.writeUInt32LE(bgra.length + andMask.length, off); off += 4;
   buf.writeInt32LE(0, off); off += 4;
   buf.writeInt32LE(0, off); off += 4;
   buf.writeUInt32LE(0, off); off += 4;
   buf.writeUInt32LE(0, off); off += 4;
-  // Pixels (bottom-up)
-  for (let y = h - 1; y >= 0; y--) {
-    pixelData.copy(buf, off, y * w * 4, (y + 1) * w * 4);
-    off += w * 4;
-  }
+  bgra.copy(buf, off); off += bgra.length;
+  andMask.copy(buf, off);
   return buf;
+}
+
+function drawMainIcon(raw, w, h) {
+  const cx = w/2, cy = h/2;
+  const bgR = Math.floor(w * 0.46), r = Math.floor(w * 0.32);
+  const innerR = Math.floor(r * 0.55), dotR = Math.max(1, Math.floor(w * 0.06));
+  fillCircle(raw, w, cx, cy, bgR, CYAN_BG);
+  fillRing(raw, w, cx, cy, innerR, Math.floor(innerR * 0.45), WHITE);
+  fillCircle(raw, w, cx, cy, dotR + 1, WHITE);
+  fillCircle(raw, w, cx, cy, dotR, CYAN_BG);
+  const needleLen = Math.floor(innerR * 0.85);
+  const angle = -Math.PI / 6;
+  drawThickLine(raw, w, cx, cy, Math.floor(cx + Math.cos(angle)*needleLen), Math.floor(cy + Math.sin(angle)*needleLen), 2, WHITE);
+}
+
+function drawMetricCircle(raw, w, h, r, g, b) {
+  const cx = w/2, cy = h/2;
+  const radius = Math.floor(Math.min(w, h) * 0.44);
+  fillCircle(raw, w, cx, cy, radius, [r, g, b, 0xff]);
 }
 
 const outDir = path.join(__dirname, 'src-tauri', 'icons');
 fs.mkdirSync(outDir, { recursive: true });
 
-fs.writeFileSync(path.join(outDir, 'icon.ico'), createIco(32));
-fs.writeFileSync(path.join(outDir, '32x32.png'), createPng(32));
-fs.writeFileSync(path.join(outDir, '128x128.png'), createPng(128));
-fs.writeFileSync(path.join(outDir, '128x128@2x.png'), createPng(256));
+// Main app icons
+fs.writeFileSync(path.join(outDir, '32x32.png'), makePngBytes(32, 32, drawMainIcon));
+fs.writeFileSync(path.join(outDir, '128x128.png'), makePngBytes(128, 128, drawMainIcon));
+fs.writeFileSync(path.join(outDir, '128x128@2x.png'), makePngBytes(256, 256, drawMainIcon));
+fs.writeFileSync(path.join(outDir, 'icon.ico'), makeIcoBytes(32, 32, drawMainIcon));
 
-console.log('✅ Icons generated!');
+// Metric tray icons (16x16 colored circles)
+fs.writeFileSync(path.join(outDir, 'temp.ico'), makeIcoBytes(16, 16, (rw, w, h) => drawMetricCircle(rw, w, h, 0xf8, 0x51, 0x49)));
+fs.writeFileSync(path.join(outDir, 'freq.ico'), makeIcoBytes(16, 16, (rw, w, h) => drawMetricCircle(rw, w, h, 0x44, 0x93, 0xf8)));
+fs.writeFileSync(path.join(outDir, 'power.ico'), makeIcoBytes(16, 16, (rw, w, h) => drawMetricCircle(rw, w, h, 0x3f, 0xb9, 0x50)));
+fs.writeFileSync(path.join(outDir, 'temp.png'), makePngBytes(16, 16, (rw, w, h) => drawMetricCircle(rw, w, h, 0xf8, 0x51, 0x49)));
+fs.writeFileSync(path.join(outDir, 'freq.png'), makePngBytes(16, 16, (rw, w, h) => drawMetricCircle(rw, w, h, 0x44, 0x93, 0xf8)));
+fs.writeFileSync(path.join(outDir, 'power.png'), makePngBytes(16, 16, (rw, w, h) => drawMetricCircle(rw, w, h, 0x3f, 0xb9, 0x50)));
+
+console.log('All icons regenerated!');

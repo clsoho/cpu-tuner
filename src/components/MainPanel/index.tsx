@@ -1,15 +1,17 @@
 import { useAppStore } from '../../stores/appStore'
+import { useI18n } from '../../stores/i18n'
 import { useState } from 'react'
 import * as api from '../../types'
 
 export default function MainPanel() {
   const {
-    cpuInfo, metrics, profileConfig, applyProfile, updateProfile, showToast,
+    cpuInfo, metrics, profileConfig, applyProfile, updateProfile,
   } = useAppStore()
+  const { t } = useI18n()
   const [setMult, setSetMult] = useState<number | null>(null)
   const [clkMod, setClkMod] = useState(100)
 
-  if (!cpuInfo) return <div className="app-loading"><div className="spinner" /><p>检测 CPU…</p></div>
+  if (!cpuInfo) return <div className="app-loading"><div className="spinner" /><p>{t('main.detect_cpu')}</p></div>
 
   const profiles = Object.values(profileConfig?.profiles ?? {}).sort((a, b) => a.id - b.id)
   const activeId = profileConfig?.active_profile_id ?? 2
@@ -61,14 +63,14 @@ export default function MainPanel() {
         <span className="cpu-name-badge">{cpuInfo.name.replace(/®/g,'').replace(/™/g,'').trim()}</span>
       </div>
 
-      {/* Main Layout: Left Monitor + Right Controls */}
+      {/* Main Layout */}
       <div className="main-layout">
-        {/* ===== Left: Per-Core Monitoring Table ===== */}
+        {/* Left: Per-Core Monitoring Table */}
         <div className="panel" style={{overflow:'auto'}}>
           <div className="panel-head">
-            <span className="panel-title">CPU Monitoring</span>
+            <span className="panel-title">{t('main.cpu_monitoring')}</span>
             {metrics && (
-              <span style={{fontSize:9, color:'var(--text-muted)'}}>
+              <span className="text-xs text-muted">
                 {metrics.cpu_usage_total.toFixed(1)}% | {(metrics.cpu_freq_current_mhz / 1000).toFixed(2)} GHz
                 {metrics.cpu_temp_c != null && ` | ${metrics.cpu_temp_c.toFixed(0)}°C`}
               </span>
@@ -78,12 +80,12 @@ export default function MainPanel() {
             <table className="mon-table">
               <thead>
                 <tr>
-                  <th>#</th>
-                  <th className="th-num">C0%</th>
-                  <th className="th-num">Temp</th>
-                  <th className="th-num">MHz</th>
-                  <th className="th-num">Mult</th>
-                  <th className="th-num">VID</th>
+                  <th>{t('main.thread')}</th>
+                  <th className="th-num">{t('main.c0')}</th>
+                  <th className="th-num">{t('main.temp')}</th>
+                  <th className="th-num">{t('main.mhz')}</th>
+                  <th className="th-num">{t('main.mult')}</th>
+                  <th className="th-num">{t('main.vid')}</th>
                   <th></th>
                 </tr>
               </thead>
@@ -111,8 +113,8 @@ export default function MainPanel() {
                     </tr>
                   ))
                 ) : (
-                  <tr><td colSpan={7} style={{textAlign:'center', color:'var(--text-muted)', padding:8}}>
-                    {metrics ? '等待核心数据…' : '等待连接…'}
+                  <tr><td colSpan={7} style={{textAlign:'center', color:'var(--text-muted)', padding:12}}>
+                    {metrics ? t('main.waiting_data') : t('main.waiting_conn')}
                   </td></tr>
                 )}
               </tbody>
@@ -120,28 +122,27 @@ export default function MainPanel() {
           </div>
         </div>
 
-        {/* ===== Right: Control Panel ===== */}
+        {/* Right: Controls */}
         <div className="controls-panel">
           {/* Set Multiplier */}
           <div className="panel">
-            <div className="panel-head"><span className="panel-title">Multiplier</span></div>
-            <div className="panel-body" style={{display:'flex', alignItems:'center', gap:6}}>
+            <div className="panel-head"><span className="panel-title">{t('main.set_multiplier')}</span></div>
+            <div className="panel-body" style={{display:'flex', alignItems:'center', gap:8}}>
               <input
                 className="ts-input ts-input-lg"
                 type="number"
-                min={8}
-                max={80}
+                min={8} max={80}
                 value={setMult ?? ''}
                 onChange={e => handleSetMult(e.target.value ? +e.target.value : null)}
                 placeholder="Auto"
               />
-              <span style={{color:'var(--text-muted)', fontSize:10}}>Set Multiplier</span>
+              <span style={{color:'var(--text-muted)', fontSize:12}}>{t('main.set_multiplier')}</span>
             </div>
           </div>
 
           {/* Clock Modulation */}
           <div className="panel">
-            <div className="panel-head"><span className="panel-title">Clock Modulation</span></div>
+            <div className="panel-head"><span className="panel-title">{t('main.clock_modulation')}</span></div>
             <div className="panel-body">
               <div className="slider-group">
                 <div className="slider-row">
@@ -158,33 +159,33 @@ export default function MainPanel() {
             </div>
           </div>
 
-          {/* Toggle Options (ThrottleStop-style checkboxes) */}
+          {/* Toggle Options */}
           <div className="panel">
-            <div className="panel-head"><span className="panel-title">Options</span></div>
+            <div className="panel-head"><span className="panel-title">{t('main.options')}</span></div>
             <div className="panel-body">
               <CheckItem
-                label="SpeedStep"
+                label={t('main.speedstep')}
                 checked={activeProfile?.speed_step ?? null}
                 onChange={v => handleToggle('speed_step', v)}
               />
               <CheckItem
-                label="Speed Shift"
+                label={t('main.speed_shift')}
                 checked={activeProfile?.speed_shift ?? null}
                 onChange={v => handleToggle('speed_shift', v)}
               />
               <CheckItem
-                label="C1E"
+                label={t('main.c1e')}
                 checked={activeProfile?.c1e ?? null}
                 onChange={v => handleToggle('c1e', v)}
               />
               <div className="ts-sep" />
               <CheckItem
-                label="BD PROCHOT"
+                label={t('main.bd_prochot')}
                 checked={activeProfile?.disable_bd_prochot === true ? false : activeProfile?.disable_bd_prochot === false ? true : null}
                 onChange={v => handleToggle('disable_bd_prochot', v ? true : false)}
               />
               <CheckItem
-                label="Turbo"
+                label={t('main.turbo')}
                 checked={activeProfile?.disable_turbo === true ? false : activeProfile?.disable_turbo === false ? true : null}
                 onChange={v => handleToggle('disable_turbo', v ? false : true)}
               />
@@ -193,11 +194,11 @@ export default function MainPanel() {
 
           {/* Speed Shift EPP */}
           <div className="panel">
-            <div className="panel-head"><span className="panel-title">Speed Shift</span></div>
+            <div className="panel-head"><span className="panel-title">{t('main.speed_shift')}</span></div>
             <div className="panel-body">
               <div className="ctrl-row">
-                <label className="ctrl-label">EPP</label>
-                <div style={{display:'flex', alignItems:'center', gap:4}}>
+                <span className="ctrl-label">{t('main.epp')}</span>
+                <div style={{display:'flex', alignItems:'center', gap:6}}>
                   <input
                     className="ts-input ts-input-sm"
                     type="number" min={0} max={255}
@@ -213,9 +214,9 @@ export default function MainPanel() {
             </div>
           </div>
 
-          {/* Power Plan indicator */}
-          <div style={{padding:'2px 4px', fontSize:10, color:'var(--text-muted)', textAlign:'center'}}>
-            {profileConfig && `Active: ${profileConfig.profiles[activeId]?.icon ?? ''} ${profileConfig.profiles[activeId]?.name ?? ''}`}
+          {/* Active profile indicator */}
+          <div style={{padding:'4px 6px', fontSize:12, color:'var(--text-muted)', textAlign:'center'}}>
+            {t('main.active')}: {profileConfig && `${profileConfig.profiles[activeId]?.icon ?? ''} ${profileConfig.profiles[activeId]?.name ?? ''}`}
           </div>
         </div>
       </div>
@@ -229,8 +230,8 @@ function CheckItem({label, checked, onChange}: {label:string; checked:boolean|nu
   return (
     <div className="ts-checkbox" onClick={() => onChange(isOn ? null : isOn ? false : true)}>
       <div className={`ts-checkbox-box ${isOn ? 'on' : ''}`}>
-        {isOn && <svg width="8" height="8" viewBox="0 0 8 8" fill="none"><path d="M1 4L3 6L7 2" stroke="#fff" strokeWidth="1.5" strokeLinecap="round"/></svg>}
-        {isOff && <svg width="8" height="8" viewBox="0 0 8 8" fill="none"><path d="M2 2L6 6M6 2L2 6" stroke="#888" strokeWidth="1.2" strokeLinecap="round"/></svg>}
+        {isOn && <svg width="10" height="10" viewBox="0 0 8 8" fill="none"><path d="M1 4L3 6L7 2" stroke="#fff" strokeWidth="1.5" strokeLinecap="round"/></svg>}
+        {isOff && <svg width="10" height="10" viewBox="0 0 8 8" fill="none"><path d="M2 2L6 6M6 2L2 6" stroke="#888" strokeWidth="1.2" strokeLinecap="round"/></svg>}
       </div>
       <span className="ts-checkbox-label" style={{opacity: checked === null ? 0.5 : 1}}>{label}</span>
     </div>

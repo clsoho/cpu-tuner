@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::process::Command;
+use winreg::enums::HKEY_LOCAL_MACHINE;
+use winreg::RegKey;
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -133,40 +135,44 @@ fn amd_arch_name(family: u32, model: u32) -> String {
     }
 }
 
-pub fn detect_cpu() -> CpuInfo {
-    let wmic_output = run_wmic(&[
-        "cpu",
-        "get",
-        "Name,NumberOfCores,NumberOfLogicalProcessors,MaxClockSpeed,Family,Revision",
-        "/format:list",
-    ])
-    .unwrap_or_default();
+/// Read CPU info from registry as fallback
+fn detect_cpu_from_registry() -> CpuInfo {
+    let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+    let cpu_key = r"HARDWARE\DESCRIPTION\System\CentralProcessor\0";
+    let key = hklm.open_subkey(cpu_key).ok();
 
-    let name = wmic_get(&wmic_output, "Name=").unwrap_or_else(|| "Unknown CPU".to_string());
-    let vendor_str = wmic_get(&wmic_output, "Name=").unwrap_or_default();
+    let name = key
+        .as_ref()
+        .and_then(|k| k.get_value::<String, _>("ProcessorNameString").ok())
+        .unwrap_or_else(|| "Unknown CPU".to_string());
+
+    let vendor_str = key
+        .as_ref()
+        .and_then(|k| k.get_value::<String, _>("VendorIdentifier").ok())
+        .unwrap_or_default();
     let vendor = CpuVendor::from_name(&vendor_str);
 
-    let cores_physical = wmic_get(&wmic_output, "NumberOfCores=")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(0);
-    let cores_logical = wmic_get(&wmic_output, "NumberOfLogicalProcessors=")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(0);
-    let base_freq = wmic_get(&wmic_output, "MaxClockSpeed=")
-        .and_then(|v| v.parse().ok())
+    let cores_logical = detect_logical_cores();
+    let cores_physical = std::cmp::max(1, cores_logical / 2);
+
+    let base_freq = key
+        .as_ref()
+        .and_then(|k| k.get_value::<u32, _>("~MHz").ok())
         .unwrap_or(0);
 
-    let (family, model, stepping) = parse_cpu_id(&wmic_output);
+    let revision = key
+        .as_ref()
+        .and_then(|k| k.get_value::<u32, _>("Revision").ok())
+        .unwrap_or(0);
 
-    let has_speed_shift = match vendor {
-        CpuVendor::Intel => family == 6 && model >= 94, // Skylake+
-        _ => false,
-    };
+    let stepping = (revision & 0xF) as u32;
+    let model = ((revision >> 4) & 0xFF) as u32;
+    let family = 6u32;
 
     let has_turbo_boost = name.to_lowercase().contains("turbo")
         || match vendor {
-            CpuVendor::Intel => family == 6 && model >= 42, // Sandy Bridge+
-            CpuVendor::AMD => family >= 23,                  // Zen+
+            CpuVendor::Intel => family == 6 && model >= 42,
+            CpuVendor::AMD => family >= 23,
             _ => false,
         };
 
@@ -181,14 +187,85 @@ pub fn detect_cpu() -> CpuInfo {
         vendor: vendor.as_str().to_string(),
         family,
         model,
-        stepping,
+        stepping: stepping as u32,
         cores_physical,
         cores_logical,
         base_freq_mhz: base_freq,
-        max_freq_mhz: base_freq, // WMIC doesn't give turbo freq easily
-        has_speed_shift,
+        max_freq_mhz: base_freq,
+        has_speed_shift: match vendor {
+            CpuVendor::Intel => family == 6 && model >= 94,
+            _ => false,
+        },
         has_turbo_boost,
         architecture,
+    }
+}
+
+pub fn detect_cpu() -> CpuInfo {
+    // Try WMIC first (deprecated but may still work)
+    let wmic_output = run_wmic(&[
+        "cpu",
+        "get",
+        "Name,NumberOfCores,NumberOfLogicalProcessors,MaxClockSpeed,Family,Revision",
+        "/format:list",
+    ])
+    .unwrap_or_default();
+
+    let name = wmic_get(&wmic_output, "Name=");
+
+    if name.is_some() {
+        // WMIC succeeded, use it
+        let name = name.unwrap();
+        let vendor_str = wmic_get(&wmic_output, "Name=").unwrap_or_default();
+        let vendor = CpuVendor::from_name(&vendor_str);
+
+        let cores_physical = wmic_get(&wmic_output, "NumberOfCores=")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+        let cores_logical = wmic_get(&wmic_output, "NumberOfLogicalProcessors=")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+        let base_freq = wmic_get(&wmic_output, "MaxClockSpeed=")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+
+        let (family, model, stepping) = parse_cpu_id(&wmic_output);
+
+        let has_speed_shift = match vendor {
+            CpuVendor::Intel => family == 6 && model >= 94,
+            _ => false,
+        };
+
+        let has_turbo_boost = name.to_lowercase().contains("turbo")
+            || match vendor {
+                CpuVendor::Intel => family == 6 && model >= 42,
+                CpuVendor::AMD => family >= 23,
+                _ => false,
+            };
+
+        let architecture = match vendor {
+            CpuVendor::Intel => intel_arch_name(family, model),
+            CpuVendor::AMD => amd_arch_name(family, model),
+            _ => "Unknown".to_string(),
+        };
+
+        CpuInfo {
+            name,
+            vendor: vendor.as_str().to_string(),
+            family,
+            model,
+            stepping,
+            cores_physical,
+            cores_logical,
+            base_freq_mhz: base_freq,
+            max_freq_mhz: base_freq,
+            has_speed_shift,
+            has_turbo_boost,
+            architecture,
+        }
+    } else {
+        // WMIC failed, fall back to registry
+        detect_cpu_from_registry()
     }
 }
 

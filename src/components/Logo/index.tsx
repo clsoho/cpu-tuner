@@ -1,41 +1,30 @@
-export default function Logo({ size = 28, animated = false }: { size?: number; animated?: boolean }) {
+export default function Logo({ size = 28 }: { size?: number }) {
   return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 64 64"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      className={animated ? 'logo-pulse' : ''}
-    >
-      {/* Outer hexagon border */}
-      <path
-        d="M32 4L56 18V46L32 60L8 46V18L32 4Z"
-        stroke="url(#logoGrad)"
-        strokeWidth="3"
-        strokeLinejoin="round"
-      />
-      {/* Inner lightning bolt */}
-      <path
-        d="M34 12L22 34H30L26 52L42 28H34L34 12Z"
-        fill="url(#boltGrad)"
-      />
-      {/* Speed lines */}
-      <path d="M14 24L18 24" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" opacity="0.6"/>
-      <path d="M46 24L50 24" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" opacity="0.6"/>
-      <path d="M46 40L50 40" stroke="#8b5cf6" strokeWidth="2" strokeLinecap="round" opacity="0.6"/>
-      <path d="M14 40L18 40" stroke="#8b5cf6" strokeWidth="2" strokeLinecap="round" opacity="0.6"/>
-      {/* Defs */}
+    <svg width={size} height={size} viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
       <defs>
-        <linearGradient id="logoGrad" x1="8" y1="4" x2="56" y2="60">
-          <stop stopColor="#3b82f6"/>
-          <stop offset="1" stopColor="#8b5cf6"/>
+        <linearGradient id="lg" x1="0" y1="0" x2="64" y2="64">
+          <stop stopColor="#00d4aa" />
+          <stop offset="1" stopColor="#4493f8" />
         </linearGradient>
-        <linearGradient id="boltGrad" x1="22" y1="12" x2="42" y2="52">
-          <stop stopColor="#60a5fa"/>
-          <stop offset="1" stopColor="#a78bfa"/>
-        </linearGradient>
+        <filter id="glow">
+          <feGaussianBlur stdDeviation="1.5" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
       </defs>
+      <path d="M14 22 22 14h20l8 8v20l-8 8H22l-8-8V22z" fill="#111820" stroke="url(#lg)" strokeWidth="1.8" strokeLinejoin="round" />
+      <circle cx="32" cy="32" r="11" stroke="url(#lg)" strokeWidth="1.2" fill="none" />
+      <circle cx="32" cy="32" r="8.5" stroke="rgba(0,212,170,.12)" strokeWidth="0.6" fill="none" />
+      <path d="M24 26A10 10 0 0 1 40 26" stroke="#00d4aa" strokeWidth="2" fill="none" strokeLinecap="round" opacity="0.8" />
+      <line x1="32" y1="32" x2="40" y2="25" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" filter="url(#glow)" />
+      <circle cx="32" cy="32" r="3" fill="#00d4aa" filter="url(#glow)" />
+      <circle cx="32" cy="32" r="1.2" fill="#fff" />
+      <circle cx="14" cy="22" r="1.2" fill="url(#lg)" opacity="0.6" />
+      <circle cx="50" cy="22" r="1.2" fill="url(#lg)" opacity="0.6" />
+      <circle cx="14" cy="42" r="1.2" fill="url(#lg)" opacity="0.6" />
+      <circle cx="50" cy="42" r="1.2" fill="url(#lg)" opacity="0.6" />
     </svg>
   )
 }

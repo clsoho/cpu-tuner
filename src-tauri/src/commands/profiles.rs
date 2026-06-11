@@ -63,7 +63,7 @@ impl Profile {
 
     pub fn preset_performance() -> Self {
         Self {
-            id: 3, name: "高性能".to_string(), icon: "\u{1F3AE}".to_string(),
+            id: 3, name: "高性能模式".to_string(), icon: "\u{1F3AE}".to_string(),
             power_plan_guid: Some("8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c".to_string()),
             min_processor_state: Some(100), max_processor_state: Some(100),
             system_cooling_policy: Some(1), processor_boost_mode: Some(3),
